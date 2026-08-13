@@ -1,6 +1,405 @@
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Archivo+Narrow:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<!DOCTYPE html>
+<html><head><script>
+      (function() {
+        // Capture host references before any artifact code runs: Window.parent
+        // is [Replaceable] (a top-level `var parent` in artifact code would
+        // replace the accessor with a data property), and a top-level
+        // `const crypto` would shadow the global — either would otherwise
+        // silently break the bridge for artifacts that worked before.
+        const realParent = window.parent;
+        const cryptoObj = window.crypto;
+        // html-to-image is only used by takeScreenshot: fetched on first use, not as a
+        // parser-blocking tag. Native fetch, captured before the proxy override below.
+        const realFetch = typeof window.fetch === 'function' ? window.fetch.bind(window) : null;
+        const HTML_TO_IMAGE_SRC = "https://cdnjs.cloudflare.com/ajax/libs/html-to-image/1.11.13/html-to-image.min.js";
+        const HTML_TO_IMAGE_INTEGRITY = "sha512-iZ2ORl595Wx6miw+GuadDet4WQbdSWS3JLMoNfY8cRGoEFy6oT3G9IbcrBeL6AfkgpA51ETt/faX6yLV+/gFJg==";
+        let htmlToImageLoad = null;
+        const loadHtmlToImage = () => {
+          if (!htmlToImageLoad) {
+            htmlToImageLoad = (realFetch
+              ? realFetch(HTML_TO_IMAGE_SRC, { integrity: HTML_TO_IMAGE_INTEGRITY, credentials: 'omit', referrerPolicy: 'no-referrer' })
+              : Promise.reject(new Error('fetch unavailable'))
+            )
+              .then((res) => {
+                if (!res.ok) throw new Error('html-to-image failed to load (' + res.status + ')');
+                return res.text();
+              })
+              .then((source) => {
+                // UMD bundle: hide the artifact's AMD/CommonJS globals so it takes the
+                // window-global branch; inline script text runs synchronously on insert.
+                const hidden = ['define', 'module', 'exports'].map((k) => {
+                  const entry = { k, own: Object.prototype.hasOwnProperty.call(window, k), v: window[k] };
+                  try { window[k] = undefined; } catch (e) {}
+                  return entry;
+                });
+                try {
+                  const el = document.createElement('script');
+                  el.text = source;
+                  (document.head || document.documentElement).appendChild(el);
+                } finally {
+                  hidden.forEach(({ k, own, v }) => {
+                    try { if (own) { window[k] = v; } else { delete window[k]; } } catch (e) {}
+                  });
+                }
+                if (!window.htmlToImage) throw new Error('html-to-image unavailable after load');
+                return window.htmlToImage;
+              });
+            // A failed load may be transient; let the next screenshot retry.
+            htmlToImageLoad.catch(() => { htmlToImageLoad = null; });
+          }
+          return htmlToImageLoad;
+        };
+        // crypto.randomUUID exists only in Secure Contexts; fall back to a
+        // unique non-crypto id elsewhere (http://LAN-IP dev flows) —
+        // uniqueness is what the bridge needs, unpredictability is
+        // defense-in-depth on top of the source guards.
+        const newRequestId =
+          cryptoObj && typeof cryptoObj.randomUUID === "function"
+            ? function () { return cryptoObj.randomUUID(); }
+            : function () { return Date.now() + "-" + Math.random(); };
+        const originalConsole = window.console;
+        window.console = {
+          log: (...args) => {
+            originalConsole.log(...args);
+            realParent.postMessage({ type: 'console', message: args.join(' ') }, '*');
+          },
+          error: (...args) => {
+            originalConsole.error(...args);
+            realParent.postMessage({ type: 'console', message: 'Error: ' + args.join(' ') }, '*');
+          },
+          warn: (...args) => {
+            originalConsole.warn(...args);
+            realParent.postMessage({ type: 'console', message: 'Warning: ' + args.join(' ') }, '*');
+          }
+        };
+
+        // Bridge request ids are crypto-random (not sequential) so they
+        // cannot be predicted by other frames in the tab.
+        let callbacksMap = new Map();
+        let streamControllers = new Map();
+        
+        window.claude = {
+          complete: (prompt) => {
+            return new Promise((resolve, reject) => {
+              const id = newRequestId();
+              callbacksMap.set(id, { resolve, reject });
+              realParent.postMessage({ type: 'claudeComplete', id, prompt }, '*');
+            });
+          }
+        };
+
+        window.storage = {
+          get: (key, shared = false) => {
+            return new Promise((resolve, reject) => {
+              const id = newRequestId();
+              callbacksMap.set(id, { resolve, reject });
+              realParent.postMessage({ type: 'storageGet', id, key, shared }, '*');
+            });
+          },
+          set: (key, value, shared = false) => {
+            return new Promise((resolve, reject) => {
+              const id = newRequestId();
+              callbacksMap.set(id, { resolve, reject });
+              realParent.postMessage({ type: 'storageSet', id, key, value, shared }, '*');
+            });
+          },
+          delete: (key, shared = false) => {
+            return new Promise((resolve, reject) => {
+              const id = newRequestId();
+              callbacksMap.set(id, { resolve, reject });
+              realParent.postMessage({ type: 'storageDelete', id, key, shared }, '*');
+            });
+          },
+          list: (prefix, shared = false) => {
+            return new Promise((resolve, reject) => {
+              const id = newRequestId();
+              callbacksMap.set(id, { resolve, reject });
+              realParent.postMessage({ type: 'storageList', id, prefix, shared }, '*');
+            });
+          }
+        };
+
+        let pendingBlobs = new Map();
+        URL.createObjectURL = (blob) => {
+          // Store the blob and create an ID and URL for it
+          const blobId = `blob-${Date.now()}-${Math.random()}`;
+          pendingBlobs.set(blobId, blob);
+          return `blob-request://${blobId}`;
+        };
+
+        URL.revokeObjectURL = (url) => {
+          // Remove the blob from our store
+          const blobId = url.replace("blob-request://", "");
+          pendingBlobs.delete(blobId);
+        };
+
+        const getBlobFromURL = (url) => {
+          const blobId = url.replace("blob-request://", "");
+          return pendingBlobs.get(blobId);
+        };
+
+        // Override global fetch with streaming support
+        window.fetch = (url, init = {}) => {
+          return new Promise((resolve, reject) => {
+            const id = newRequestId();
+            const channelId = `fetch-${id}-${Date.now()}`;
+            
+            callbacksMap.set(id, { 
+              resolve: (response) => {
+                // Null-body statuses: Response(stream, {status: 204}) throws
+                // per the Fetch spec, which would escape this resolver and
+                // hang the artifact's await forever.
+                if (response.status === 204 || response.status === 205 || response.status === 304) {
+                  try {
+                    resolve(new Response(null, {
+                      status: response.status,
+                      statusText: response.statusText,
+                      headers: response.headers
+                    }));
+                  } catch (err) {
+                    // Invalid statusText/header bytes can throw here too.
+                    reject(new TypeError(
+                      'Bridge fetch: unconstructable response (status ' + response.status + ')'
+                    ));
+                  }
+                  return;
+                }
+                // Create a ReadableStream for the response body
+                const stream = new ReadableStream({
+                  start(controller) {
+                    streamControllers.set(channelId, controller);
+                  },
+                  cancel() {
+                    streamControllers.delete(channelId);
+                  }
+                });
+                
+                // Create and return the Response with the stream. Response()
+                // requires status in [200, 599]; an opaque/no-cors fetch
+                // forwards status 0, which would throw here and escape the
+                // resolver, hanging the artifact's await. Surface it as a
+                // network-error-shaped rejection instead.
+                try {
+                  resolve(new Response(stream, {
+                    status: response.status,
+                    statusText: response.statusText,
+                    headers: response.headers
+                  }));
+                } catch (err) {
+                  streamControllers.delete(channelId);
+                  reject(new TypeError(
+                    'Bridge fetch: unconstructable response (status ' + response.status + ')'
+                  ));
+                }
+              },
+              reject,
+              channelId
+            });
+            
+            realParent.postMessage({
+              type: 'proxyFetch',
+              id,
+              url,
+              init,
+              channelId
+            }, '*');
+          });
+        };
+
+        window.addEventListener('message', async (event) => {
+          // Only the embedding parent may drive the bridge — sibling and
+          // nested frames can also postMessage into this window.
+          if (event.source !== realParent) return;
+          if (event.data.type === 'takeScreenshot') {
+            // Echo the request's nonce so the requester can correlate the
+            // reply to ITS request — a reply without the expected nonce
+            // (e.g. from a stale pre-remount artifact) is ignored upstream.
+            const screenshotNonce = event.data.nonce;
+            const rootElement = document.getElementById('artifacts-component-root-html');
+            if (!rootElement) {
+              realParent.postMessage({
+                type: 'screenshotError',
+                nonce: screenshotNonce,
+                error: new Error('Root element not found'),
+              }, '*');
+              return;
+            }
+            // Catch CDN load failures and toPng errors so the parent always
+            // gets a response instead of hanging forever.
+            try {
+              const htmlToImage = await loadHtmlToImage();
+              const screenshot = await htmlToImage.toPng(rootElement, {
+                imagePlaceholder:
+                  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAAXNSR0IArs4c6QAAAA1JREFUGFdjePDgwX8ACOQDoNsk0PMAAAAASUVORK5CYII=",
+              });
+              realParent.postMessage({
+                type: 'screenshotData',
+                nonce: screenshotNonce,
+                data: screenshot,
+              }, '*');
+            } catch (err) {
+              realParent.postMessage({
+                type: 'screenshotError',
+                nonce: screenshotNonce,
+                error: err instanceof Error ? err : new Error(String(err)),
+              }, '*');
+            }
+          } else if (event.data.type === 'claudeComplete') {
+            const callback = callbacksMap.get(event.data.id);
+            if (!callback) return;
+            if (event.data.error) {
+              callback.reject(new Error(event.data.error));
+            } else {
+              callback.resolve(event.data.completion);
+            }
+            callbacksMap.delete(event.data.id);
+          } else if (event.data.type === 'proxyFetchResponse') {
+            const callback = callbacksMap.get(event.data.id);
+            if (!callback) return;
+            if (event.data.error) {
+              callback.reject(new Error(event.data.error));
+              callbacksMap.delete(event.data.id);
+            } else {
+              // Initial response with headers, status, etc.
+              callback.resolve({
+                status: event.data.status,
+                statusText: event.data.statusText,
+                headers: event.data.headers
+              });
+              // Don't delete the callback yet if streaming
+              if (!event.data.body) {
+                callbacksMap.delete(event.data.id);
+              }
+            }
+          } else if (event.data.type === 'proxyFetchStream') {
+            // Handle streaming data chunks
+            const controller = streamControllers.get(event.data.channelId);
+            if (controller) {
+              if (event.data.error) {
+                controller.error(new Error(event.data.error));
+                streamControllers.delete(event.data.channelId);
+              } else if (event.data.done) {
+                controller.close();
+                streamControllers.delete(event.data.channelId);
+                // Clean up the callback
+                const callback = Array.from(callbacksMap.entries()).find(
+                  ([_, value]) => value.channelId === event.data.channelId
+                );
+                if (callback) {
+                  callbacksMap.delete(callback[0]);
+                }
+              } else if (event.data.chunk) {
+                controller.enqueue(new Uint8Array(event.data.chunk));
+              }
+            }
+          } else if (event.data.type === 'storageGet') {
+            const callback = callbacksMap.get(event.data.id);
+            if (!callback) return;
+            if (event.data.error) {
+              callback.reject(new Error(event.data.error));
+            } else {
+              callback.resolve(event.data.result);
+            }
+            callbacksMap.delete(event.data.id);
+          } else if (event.data.type === 'storageSet') {
+            const callback = callbacksMap.get(event.data.id);
+            if (!callback) return;
+            if (event.data.error) {
+              callback.reject(new Error(event.data.error));
+            } else {
+              callback.resolve(event.data.result);
+            }
+            callbacksMap.delete(event.data.id);
+          } else if (event.data.type === 'storageDelete') {
+            const callback = callbacksMap.get(event.data.id);
+            if (!callback) return;
+            if (event.data.error) {
+              callback.reject(new Error(event.data.error));
+            } else {
+              callback.resolve(event.data.result);
+            }
+            callbacksMap.delete(event.data.id);
+          } else if (event.data.type === 'storageList') {
+            const callback = callbacksMap.get(event.data.id);
+            if (!callback) return;
+            if (event.data.error) {
+              callback.reject(new Error(event.data.error));
+            } else {
+              callback.resolve(event.data.result);
+            }
+            callbacksMap.delete(event.data.id);
+          }
+        });
+
+        window.addEventListener('click', (event) => {
+          const isEl = event.target instanceof HTMLElement;
+          if (!isEl) return;
+    
+          // find ancestor links
+          const linkEl = event.target.closest("a");
+          if (!linkEl || !linkEl.href) return;
+    
+          event.preventDefault();
+          event.stopImmediatePropagation();
+    
+          if (linkEl.href.startsWith("blob-request:")) {
+            const blob = getBlobFromURL(linkEl.href);
+            if (!blob) return;
+            void blob.arrayBuffer().then((data) => {
+              realParent.postMessage({
+                type: "downloadFile",
+                filename: linkEl.download,
+                data,
+                mimeType: blob.type || "application/octet-stream",
+              });
+            });
+          } else if (linkEl.href.startsWith("data:")) {
+            const [header, base64Data] = linkEl.href.split(",");
+            const mimeMatch = header.match(/data:([^;]+)/);
+            const mimeType = mimeMatch ? mimeMatch[1] : "application/octet-stream";
+            const binaryString = atob(base64Data);
+            const data = Uint8Array.from(binaryString, (c) =>
+              c.charCodeAt(0),
+            ).buffer;
+            realParent.postMessage({
+              type: "downloadFile",
+              filename: linkEl.download,
+              data,
+              mimeType,
+            });
+          } else {
+            let linkUrl;
+            try {
+              linkUrl = new URL(linkEl.href);
+            } catch (error) {
+              return;
+            }
+    
+            if (linkUrl.hostname === window.location.hostname) return;
+      
+            realParent.postMessage({
+              type: 'openExternal',
+              href: linkEl.href,
+            }, '*');
+          }
+      });
+
+        const originalOpen = window.open;
+        window.open = function (url) {
+          realParent.postMessage({
+            type: "openExternal",
+            href: url,
+          }, "*");
+        };
+
+        window.addEventListener('error', (event) => {
+          realParent.postMessage({ type: 'console', message: 'Uncaught Error: ' + event.message }, '*');
+        });
+      })();
+    </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
+<link href="https://fonts.googleapis.com/css2?family=Archivo+Narrow:wght@500;600;700&amp;family=IBM+Plex+Mono:wght@400;500;600&amp;family=Inter:wght@400;500;600&amp;display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 
 <style>
@@ -76,6 +475,23 @@
   .m-upload-btn:hover{filter:brightness(1.08);}
   .m-upload-btn:focus-visible{outline:2px solid var(--text);outline-offset:2px;}
   #m-file-input{display:none;}
+  .m-export-btn{
+    background:transparent;
+    color:var(--text-muted);
+    border:1px solid var(--hairline);
+    font-family:'IBM Plex Mono',monospace;
+    font-weight:500;
+    font-size:12px;
+    letter-spacing:.02em;
+    padding:9px 14px;
+    border-radius:7px;
+    cursor:pointer;
+    white-space:nowrap;
+    margin-left:8px;
+  }
+  .m-export-btn:hover{color:var(--text);border-color:var(--text-muted);}
+  .m-export-btn:focus-visible{outline:2px solid var(--text);outline-offset:2px;}
+  .m-export-btn.copied{color:var(--green);border-color:var(--green-dim);}
 
   /* split-flap board */
   .m-board{
@@ -324,35 +740,815 @@
   }
 </style>
 
-<div class="mccoy-root" id="mccoy-app">
+</head><body><div class="mccoy-root" id="mccoy-app">
   <div class="m-header">
     <div>
-      <div class="eyebrow">McCoy's &middot; BMS EnTouch</div>
+      <div class="eyebrow">McCoy's · BMS EnTouch</div>
       <h1>Alert Dispatch Board</h1>
-      <div class="sub" id="m-header-sub">No report loaded yet</div>
+      <div class="sub" id="m-header-sub">Report date: 2026-08-13 (no prior report to diff against)</div>
     </div>
     <div>
       <button class="m-upload-btn" id="m-upload-trigger" type="button">Load today's report</button>
       <input type="file" id="m-file-input" accept=".csv">
+      <button class="m-export-btn" id="m-export-trigger" type="button" style="display: inline-block;">Building file...</button>
     </div>
   </div>
 
-  <div class="m-board" id="m-board" style="display:none;">
-    <div class="m-flap c-dispatch"><div class="count" id="cnt-dispatch">0</div><div class="label">HVAC dispatch</div></div>
-    <div class="m-flap c-vendor"><div class="count" id="cnt-vendor">0</div><div class="label">Call EnTouch</div></div>
-    <div class="m-flap c-watch"><div class="count" id="cnt-watch">0</div><div class="label">Watch list</div></div>
-    <div class="m-flap c-new"><div class="count" id="cnt-new">0</div><div class="label">New today</div></div>
-    <div class="m-flap c-ghost"><div class="count" id="cnt-ghost">0</div><div class="label">Stale / ghost</div></div>
+  <div class="m-board" id="m-board" style="display: grid;">
+    <div class="m-flap c-dispatch"><div class="count" id="cnt-dispatch">7</div><div class="label">HVAC dispatch</div></div>
+    <div class="m-flap c-vendor"><div class="count" id="cnt-vendor">9</div><div class="label">Call EnTouch</div></div>
+    <div class="m-flap c-watch"><div class="count" id="cnt-watch">15</div><div class="label">Watch list</div></div>
+    <div class="m-flap c-new"><div class="count" id="cnt-new">49</div><div class="label">New today</div></div>
+    <div class="m-flap c-ghost"><div class="count" id="cnt-ghost">21</div><div class="label">Stale / ghost</div></div>
   </div>
 
-  <div class="m-body" id="m-body">
-    <div class="m-empty">
-      <strong>Load a daily EnTouch export to get started.</strong><br>
-      I'll diff it against the last report you loaded, flag anything that needs a truck rolled today,
-      and keep a running history so nothing sits forgotten in the backlog.
-    </div>
-  </div>
+  <div class="m-body" id="m-body"><div class="m-tabs"><button class="m-tab active" data-tab="dispatch">Dispatch HVAC tech<span class="n">7</span></button><button class="m-tab " data-tab="vendor">Call EnTouch<span class="n">9</span></button><button class="m-tab " data-tab="watch">Watch list<span class="n">15</span></button><button class="m-tab " data-tab="doors">Door / occupancy alerts<span class="n">5</span></button><button class="m-tab " data-tab="ghost">Stale / ghost alerts<span class="n">21</span></button></div><div class="m-tab-panel active" data-panel="dispatch">
+      <div class="m-ghost-toolbar">
+        <div class="m-section-note" style="margin:0;">Confirmed heat or a unit that's genuinely not cooling — mechanical, needs a truck on-site. Includes lower-priority items bundled in from stores that already have a truck headed there.</div>
+        <button class="m-download-btn" id="m-wo-copy-all">Copy all work orders</button>
+      </div>
+      
+      <div class="m-row sev-dispatch  " data-key="017 Corpus Christi TX|rtu5 doors|zone not regulating">
+        <input type="checkbox" class="chk" data-action="dispatch" data-key="017 Corpus Christi TX|rtu5 doors|zone not regulating">
+        <div class="m-row-main">
+          <div class="m-row-top">
+            <span class="m-store">017 Corpus Christi TX</span>
+            <span class="m-device">RTU5 Doors</span>
+            <span class="m-badge new">New</span>
+          </div>
+          <div class="m-reason">Not cooling — zone temp and supply air are both out of range on this unit.</div>
+          <div class="m-meta">Zone Not Regulating · asserted 08-13-2026 4:07am</div>
+          <button class="m-wo-btn" data-wo-key="017 Corpus Christi TX|rtu5 doors|zone not regulating">Copy work order</button>
+        </div>
+        <div class="m-row-label">Mark sent</div>
+      </div>
+      <div class="m-row sev-dispatch  " data-key="028 Baytown TX|rtu3 light cloud - cool only|high internal temperature">
+        <input type="checkbox" class="chk" data-action="dispatch" data-key="028 Baytown TX|rtu3 light cloud - cool only|high internal temperature">
+        <div class="m-row-main">
+          <div class="m-row-top">
+            <span class="m-store">028 Baytown TX</span>
+            <span class="m-device">RTU3 Light Cloud - Cool Only</span>
+            <span class="m-badge new">New</span>
+          </div>
+          <div class="m-reason">Confirmed heat — space measured at or above 85°F for an hour.</div>
+          <div class="m-meta">High Internal Temperature · asserted 08-13-2026 9:26am</div>
+          <button class="m-wo-btn" data-wo-key="028 Baytown TX|rtu3 light cloud - cool only|high internal temperature">Copy work order</button>
+        </div>
+        <div class="m-row-label">Mark sent</div>
+      </div>
+      <div class="m-row sev-dispatch  " data-key="072 Paris TX|ahu6 office|zone not regulating">
+        <input type="checkbox" class="chk" data-action="dispatch" data-key="072 Paris TX|ahu6 office|zone not regulating">
+        <div class="m-row-main">
+          <div class="m-row-top">
+            <span class="m-store">072 Paris TX</span>
+            <span class="m-device">AHU6 Office</span>
+            <span class="m-badge new">New</span>
+          </div>
+          <div class="m-reason">Not cooling — zone temp and supply air are both out of range on this unit.</div>
+          <div class="m-meta">Zone Not Regulating · asserted 07-14-2026 5:49am</div>
+          <button class="m-wo-btn" data-wo-key="072 Paris TX|ahu6 office|zone not regulating">Copy work order</button>
+        </div>
+        <div class="m-row-label">Mark sent</div>
+      </div>
+      <div class="m-row sev-dispatch  " data-key="074 Bee Cave TX|rtu2 ac/ electric|zone not regulating">
+        <input type="checkbox" class="chk" data-action="dispatch" data-key="074 Bee Cave TX|rtu2 ac/ electric|zone not regulating">
+        <div class="m-row-main">
+          <div class="m-row-top">
+            <span class="m-store">074 Bee Cave TX</span>
+            <span class="m-device">RTU2 AC/ Electric</span>
+            <span class="m-badge new">New</span>
+          </div>
+          <div class="m-reason">Not cooling — zone temp and supply air are both out of range on this unit.</div>
+          <div class="m-meta">Zone Not Regulating · asserted 08-13-2026 9:22am</div>
+          <button class="m-wo-btn" data-wo-key="074 Bee Cave TX|rtu2 ac/ electric|zone not regulating">Copy work order</button>
+        </div>
+        <div class="m-row-label">Mark sent</div>
+      </div>
+      <div class="m-row sev-dispatch  " data-key="109 Aransas Pass TX|rtu5 lumber|high internal temperature">
+        <input type="checkbox" class="chk" data-action="dispatch" data-key="109 Aransas Pass TX|rtu5 lumber|high internal temperature">
+        <div class="m-row-main">
+          <div class="m-row-top">
+            <span class="m-store">109 Aransas Pass TX</span>
+            <span class="m-device">RTU5 Lumber</span>
+            <span class="m-badge new">New</span>
+          </div>
+          <div class="m-reason">Confirmed heat — space measured at or above 85°F for an hour.</div>
+          <div class="m-meta">High Internal Temperature · asserted 08-13-2026 9:47am</div>
+          <button class="m-wo-btn" data-wo-key="109 Aransas Pass TX|rtu5 lumber|high internal temperature">Copy work order</button>
+        </div>
+        <div class="m-row-label">Mark sent</div>
+      </div>
+      <div class="m-row sev-dispatch  dispatched" data-key="109 Aransas Pass TX|rtu3 electrical|supply air sensor 2 cooling">
+        <input type="checkbox" class="chk" data-action="dispatch" data-key="109 Aransas Pass TX|rtu3 electrical|supply air sensor 2 cooling" checked="">
+        <div class="m-row-main">
+          <div class="m-row-top">
+            <span class="m-store">109 Aransas Pass TX</span>
+            <span class="m-device">RTU3 Electrical</span>
+            <span class="m-badge new">New</span> <span class="m-badge site">Same-site tech visit</span>
+          </div>
+          <div class="m-reason">Bundled with today's dispatch — a tech is already headed to this store for another unit, so this gets checked on the same visit rather than waiting for a separate trip.</div>
+          <div class="m-meta">Supply Air Sensor 2 Cooling · asserted 08-13-2026 6:07am</div>
+          <button class="m-wo-btn" data-wo-key="109 Aransas Pass TX|rtu3 electrical|supply air sensor 2 cooling">Copy work order</button>
+        </div>
+        <div class="m-row-label">Dispatched</div>
+      </div>
+      <div class="m-row sev-dispatch  " data-key="113 Montgomery TX|rtu3 irrigation|zone not regulating">
+        <input type="checkbox" class="chk" data-action="dispatch" data-key="113 Montgomery TX|rtu3 irrigation|zone not regulating">
+        <div class="m-row-main">
+          <div class="m-row-top">
+            <span class="m-store">113 Montgomery TX</span>
+            <span class="m-device">RTU3 Irrigation</span>
+            <span class="m-badge new">New</span>
+          </div>
+          <div class="m-reason">Not cooling — zone temp and supply air are both out of range on this unit.</div>
+          <div class="m-meta">Zone Not Regulating · asserted 08-13-2026 10:05am</div>
+          <button class="m-wo-btn" data-wo-key="113 Montgomery TX|rtu3 irrigation|zone not regulating">Copy work order</button>
+        </div>
+        <div class="m-row-label">Mark sent</div>
+      </div>
+    </div><div class="m-tab-panel " data-panel="vendor">
+      <div class="m-section-note">Comms/panel down 7+ days, or multiple units dark at one site — vendor/network issue, not a mechanical one.</div>
+      
+      <div class="m-row sev-dispatch vendor-call " data-key="003 Brazoria TX|rtu1 mud/patching|loss of communication">
+        <input type="checkbox" class="chk" data-action="dispatch" data-key="003 Brazoria TX|rtu1 mud/patching|loss of communication">
+        <div class="m-row-main">
+          <div class="m-row-top">
+            <span class="m-store">003 Brazoria TX</span>
+            <span class="m-device">RTU1 Mud/Patching</span>
+            <span class="m-badge new">New</span> <span class="m-badge vendor">Call EnTouch</span>
+          </div>
+          <div class="m-reason">Comms down for 24 days — dispatch to EnTouch (panel/controller issue, not an HVAC truck roll).</div>
+          <div class="m-meta">Loss of Communication · asserted 07-20-2026 4:52pm</div>
+          
+        </div>
+        <div class="m-row-label">Mark called</div>
+      </div>
+      <div class="m-row sev-dispatch vendor-call " data-key="030 San Angelo TX|rtu3 numbers-letters|loss of communication">
+        <input type="checkbox" class="chk" data-action="dispatch" data-key="030 San Angelo TX|rtu3 numbers-letters|loss of communication">
+        <div class="m-row-main">
+          <div class="m-row-top">
+            <span class="m-store">030 San Angelo TX</span>
+            <span class="m-device">RTU3 Numbers-Letters</span>
+            <span class="m-badge new">New</span> <span class="m-badge vendor">Call EnTouch</span>
+          </div>
+          <div class="m-reason">Comms down for 52 days — dispatch to EnTouch (panel/controller issue, not an HVAC truck roll).</div>
+          <div class="m-meta">Loss of Communication · asserted 06-22-2026 3:57pm</div>
+          
+        </div>
+        <div class="m-row-label">Mark called</div>
+      </div>
+      <div class="m-row sev-dispatch vendor-call " data-key="035 Odessa TX|ahu1 sales|loss of communication">
+        <input type="checkbox" class="chk" data-action="dispatch" data-key="035 Odessa TX|ahu1 sales|loss of communication">
+        <div class="m-row-main">
+          <div class="m-row-top">
+            <span class="m-store">035 Odessa TX</span>
+            <span class="m-device">AHU1 Sales</span>
+            <span class="m-badge new">New</span> <span class="m-badge vendor">Call EnTouch</span>
+          </div>
+          <div class="m-reason">Comms down for 13 days — dispatch to EnTouch (panel/controller issue, not an HVAC truck roll).</div>
+          <div class="m-meta">Loss of Communication · asserted 07-31-2026 5:47pm</div>
+          
+        </div>
+        <div class="m-row-label">Mark called</div>
+      </div>
+      <div class="m-row sev-dispatch vendor-call " data-key="038 Rosenberg TX|rtu1 moulding|loss of communication">
+        <input type="checkbox" class="chk" data-action="dispatch" data-key="038 Rosenberg TX|rtu1 moulding|loss of communication">
+        <div class="m-row-main">
+          <div class="m-row-top">
+            <span class="m-store">038 Rosenberg TX</span>
+            <span class="m-device">RTU1 Moulding</span>
+            <span class="m-badge new">New</span> <span class="m-badge vendor">Call EnTouch</span>
+          </div>
+          <div class="m-reason">Comms down for 68 days — dispatch to EnTouch (panel/controller issue, not an HVAC truck roll).</div>
+          <div class="m-meta">Loss of Communication · asserted 06-06-2026 6:30am</div>
+          
+        </div>
+        <div class="m-row-label">Mark called</div>
+      </div>
+      <div class="m-row sev-dispatch vendor-call " data-key="044 Kerrville TX|rtu2 electric|loss of communication">
+        <input type="checkbox" class="chk" data-action="dispatch" data-key="044 Kerrville TX|rtu2 electric|loss of communication">
+        <div class="m-row-main">
+          <div class="m-row-top">
+            <span class="m-store">044 Kerrville TX</span>
+            <span class="m-device">RTU2 Electric</span>
+            <span class="m-badge new">New</span> <span class="m-badge vendor">Call EnTouch</span>
+          </div>
+          <div class="m-reason">Comms down for 28 days — dispatch to EnTouch (panel/controller issue, not an HVAC truck roll).</div>
+          <div class="m-meta">Loss of Communication · asserted 07-16-2026 5:23am</div>
+          
+        </div>
+        <div class="m-row-label">Mark called</div>
+      </div>
+      <div class="m-row sev-dispatch vendor-call " data-key="047 Waco TX|rtu3 doors|loss of communication">
+        <input type="checkbox" class="chk" data-action="dispatch" data-key="047 Waco TX|rtu3 doors|loss of communication">
+        <div class="m-row-main">
+          <div class="m-row-top">
+            <span class="m-store">047 Waco TX</span>
+            <span class="m-device">RTU3 Doors</span>
+            <span class="m-badge new">New</span> <span class="m-badge vendor">Call EnTouch</span>
+          </div>
+          <div class="m-reason">Comms down for 15 days — dispatch to EnTouch (panel/controller issue, not an HVAC truck roll).</div>
+          <div class="m-meta">Loss of Communication · asserted 07-29-2026 3:15pm</div>
+          
+        </div>
+        <div class="m-row-label">Mark called</div>
+      </div>
+      <div class="m-row sev-dispatch vendor-call " data-key="072 Paris TX|rtu4 lumber|loss of communication">
+        <input type="checkbox" class="chk" data-action="dispatch" data-key="072 Paris TX|rtu4 lumber|loss of communication">
+        <div class="m-row-main">
+          <div class="m-row-top">
+            <span class="m-store">072 Paris TX</span>
+            <span class="m-device">RTU4 Lumber</span>
+            <span class="m-badge new">New</span> <span class="m-badge vendor">Call EnTouch</span>
+          </div>
+          <div class="m-reason">Comms down for 34 days — dispatch to EnTouch (panel/controller issue, not an HVAC truck roll).</div>
+          <div class="m-meta">Loss of Communication · asserted 07-10-2026 7:05pm</div>
+          
+        </div>
+        <div class="m-row-label">Mark called</div>
+      </div>
+      <div class="m-row sev-dispatch vendor-call " data-key="074 Bee Cave TX|rtu5 lumber|loss of communication">
+        <input type="checkbox" class="chk" data-action="dispatch" data-key="074 Bee Cave TX|rtu5 lumber|loss of communication">
+        <div class="m-row-main">
+          <div class="m-row-top">
+            <span class="m-store">074 Bee Cave TX</span>
+            <span class="m-device">RTU5 Lumber</span>
+            <span class="m-badge new">New</span> <span class="m-badge vendor">Call EnTouch</span>
+          </div>
+          <div class="m-reason">Comms down for 36 days — dispatch to EnTouch (panel/controller issue, not an HVAC truck roll).</div>
+          <div class="m-meta">Loss of Communication · asserted 07-08-2026 12:21pm</div>
+          
+        </div>
+        <div class="m-row-label">Mark called</div>
+      </div>
+      <div class="m-row sev-dispatch vendor-call " data-key="115 Midlothian TX|rtu1 tools|loss of communication">
+        <input type="checkbox" class="chk" data-action="dispatch" data-key="115 Midlothian TX|rtu1 tools|loss of communication">
+        <div class="m-row-main">
+          <div class="m-row-top">
+            <span class="m-store">115 Midlothian TX</span>
+            <span class="m-device">RTU1 Tools</span>
+            <span class="m-badge new">New</span> <span class="m-badge vendor">Call EnTouch</span>
+          </div>
+          <div class="m-reason">Comms down for 15 days — dispatch to EnTouch (panel/controller issue, not an HVAC truck roll).</div>
+          <div class="m-meta">Loss of Communication · asserted 07-29-2026 11:59am</div>
+          
+        </div>
+        <div class="m-row-label">Mark called</div>
+      </div>
+    </div><div class="m-tab-panel " data-panel="watch">
+      <div class="m-section-note">Single-symptom cooling alerts and comms losses under 7 days — not dispatch-worthy yet, but check tomorrow's report.</div>
+      
+      <div class="m-row sev-watch  " data-key="008 Stephenville TX|rtu2 tools|supply air sensor 2 cooling">
+        <input type="checkbox" class="chk" data-action="dispatch" data-key="008 Stephenville TX|rtu2 tools|supply air sensor 2 cooling">
+        <div class="m-row-main">
+          <div class="m-row-top">
+            <span class="m-store">008 Stephenville TX</span>
+            <span class="m-device">RTU2 Tools</span>
+            <span class="m-badge new">New</span>
+          </div>
+          <div class="m-reason">Single-symptom cooling alert — watch for the matching alert to confirm before dispatching.</div>
+          <div class="m-meta">Supply Air Sensor 2 Cooling · asserted 08-13-2026 9:50am</div>
+          
+        </div>
+        <div class="m-row-label">Mark sent</div>
+      </div>
+      <div class="m-row sev-watch  " data-key="015 Harlingen TX|rtu5 lumber|supply air sensor 2 cooling">
+        <input type="checkbox" class="chk" data-action="dispatch" data-key="015 Harlingen TX|rtu5 lumber|supply air sensor 2 cooling">
+        <div class="m-row-main">
+          <div class="m-row-top">
+            <span class="m-store">015 Harlingen TX</span>
+            <span class="m-device">RTU5 Lumber</span>
+            <span class="m-badge new">New</span>
+          </div>
+          <div class="m-reason">Single-symptom cooling alert — watch for the matching alert to confirm before dispatching.</div>
+          <div class="m-meta">Supply Air Sensor 2 Cooling · asserted 08-13-2026 10:06am</div>
+          
+        </div>
+        <div class="m-row-label">Mark sent</div>
+      </div>
+      <div class="m-row sev-watch  " data-key="016 New Braunfels TX|rtu2 tools|loss of communication">
+        <input type="checkbox" class="chk" data-action="dispatch" data-key="016 New Braunfels TX|rtu2 tools|loss of communication">
+        <div class="m-row-main">
+          <div class="m-row-top">
+            <span class="m-store">016 New Braunfels TX</span>
+            <span class="m-device">RTU2 Tools</span>
+            <span class="m-badge new">New</span>
+          </div>
+          <div class="m-reason">Comms down 1 day(s) — watching. Escalates to EnTouch in 6 more day(s) if unresolved. Another unit at this site also lost comms within 24 hours — worth a call to the store now even though it's not past the EnTouch threshold yet.</div>
+          <div class="m-meta">Loss of Communication · asserted 08-12-2026 10:14pm</div>
+          
+        </div>
+        <div class="m-row-label">Mark sent</div>
+      </div>
+      <div class="m-row sev-watch  " data-key="016 New Braunfels TX|rtu5 lumber|loss of communication">
+        <input type="checkbox" class="chk" data-action="dispatch" data-key="016 New Braunfels TX|rtu5 lumber|loss of communication">
+        <div class="m-row-main">
+          <div class="m-row-top">
+            <span class="m-store">016 New Braunfels TX</span>
+            <span class="m-device">RTU5 Lumber</span>
+            <span class="m-badge new">New</span>
+          </div>
+          <div class="m-reason">New comms loss today — watching. Escalates to EnTouch if still open in 7 days. Another unit at this site also lost comms within 24 hours — worth a call to the store now even though it's not past the EnTouch threshold yet.</div>
+          <div class="m-meta">Loss of Communication · asserted 08-13-2026 4:32am</div>
+          
+        </div>
+        <div class="m-row-label">Mark sent</div>
+      </div>
+      <div class="m-row sev-watch  " data-key="029 Corpus Christi TX|rtu4 moulding- cool only|supply air sensor 2 cooling">
+        <input type="checkbox" class="chk" data-action="dispatch" data-key="029 Corpus Christi TX|rtu4 moulding- cool only|supply air sensor 2 cooling">
+        <div class="m-row-main">
+          <div class="m-row-top">
+            <span class="m-store">029 Corpus Christi TX</span>
+            <span class="m-device">RTU4 Moulding- Cool only</span>
+            <span class="m-badge new">New</span>
+          </div>
+          <div class="m-reason">Single-symptom cooling alert — watch for the matching alert to confirm before dispatching.</div>
+          <div class="m-meta">Supply Air Sensor 2 Cooling · asserted 08-13-2026 4:12am</div>
+          
+        </div>
+        <div class="m-row-label">Mark sent</div>
+      </div>
+      <div class="m-row sev-watch  " data-key="030 San Angelo TX|rtu5 doors|loss of communication">
+        <input type="checkbox" class="chk" data-action="dispatch" data-key="030 San Angelo TX|rtu5 doors|loss of communication">
+        <div class="m-row-main">
+          <div class="m-row-top">
+            <span class="m-store">030 San Angelo TX</span>
+            <span class="m-device">RTU5 Doors</span>
+            <span class="m-badge new">New</span>
+          </div>
+          <div class="m-reason">Comms down 5 day(s) — watching. Escalates to EnTouch in 2 more day(s) if unresolved.</div>
+          <div class="m-meta">Loss of Communication · asserted 08-08-2026 5:34pm</div>
+          
+        </div>
+        <div class="m-row-label">Mark sent</div>
+      </div>
+      <div class="m-row sev-watch  " data-key="030 San Angelo TX|rtu5 doors|supply air sensor 2 cooling">
+        <input type="checkbox" class="chk" data-action="dispatch" data-key="030 San Angelo TX|rtu5 doors|supply air sensor 2 cooling">
+        <div class="m-row-main">
+          <div class="m-row-top">
+            <span class="m-store">030 San Angelo TX</span>
+            <span class="m-device">RTU5 Doors</span>
+            <span class="m-badge new">New</span>
+          </div>
+          <div class="m-reason">Single-symptom cooling alert — watch for the matching alert to confirm before dispatching.</div>
+          <div class="m-meta">Supply Air Sensor 2 Cooling · asserted 08-08-2026 2:05pm</div>
+          
+        </div>
+        <div class="m-row-label">Mark sent</div>
+      </div>
+      <div class="m-row sev-watch  " data-key="034 Bryan TX|rtu3 nails|loss of communication">
+        <input type="checkbox" class="chk" data-action="dispatch" data-key="034 Bryan TX|rtu3 nails|loss of communication">
+        <div class="m-row-main">
+          <div class="m-row-top">
+            <span class="m-store">034 Bryan TX</span>
+            <span class="m-device">RTU3 Nails</span>
+            <span class="m-badge new">New</span>
+          </div>
+          <div class="m-reason">Comms down 2 day(s) — watching. Escalates to EnTouch in 5 more day(s) if unresolved. Another unit at this site also lost comms within 24 hours — worth a call to the store now even though it's not past the EnTouch threshold yet.</div>
+          <div class="m-meta">Loss of Communication · asserted 08-11-2026 9:27pm</div>
+          
+        </div>
+        <div class="m-row-label">Mark sent</div>
+      </div>
+      <div class="m-row sev-watch  " data-key="034 Bryan TX|rtu4 paint|loss of communication">
+        <input type="checkbox" class="chk" data-action="dispatch" data-key="034 Bryan TX|rtu4 paint|loss of communication">
+        <div class="m-row-main">
+          <div class="m-row-top">
+            <span class="m-store">034 Bryan TX</span>
+            <span class="m-device">RTU4 Paint</span>
+            <span class="m-badge new">New</span>
+          </div>
+          <div class="m-reason">Comms down 1 day(s) — watching. Escalates to EnTouch in 6 more day(s) if unresolved. Another unit at this site also lost comms within 24 hours — worth a call to the store now even though it's not past the EnTouch threshold yet.</div>
+          <div class="m-meta">Loss of Communication · asserted 08-12-2026 6:15pm</div>
+          
+        </div>
+        <div class="m-row-label">Mark sent</div>
+      </div>
+      <div class="m-row sev-watch  " data-key="034 Bryan TX|rtu5 lumber co|loss of communication">
+        <input type="checkbox" class="chk" data-action="dispatch" data-key="034 Bryan TX|rtu5 lumber co|loss of communication">
+        <div class="m-row-main">
+          <div class="m-row-top">
+            <span class="m-store">034 Bryan TX</span>
+            <span class="m-device">RTU5 Lumber CO</span>
+            <span class="m-badge new">New</span>
+          </div>
+          <div class="m-reason">Comms down 2 day(s) — watching. Escalates to EnTouch in 5 more day(s) if unresolved. Another unit at this site also lost comms within 24 hours — worth a call to the store now even though it's not past the EnTouch threshold yet.</div>
+          <div class="m-meta">Loss of Communication · asserted 08-11-2026 9:28pm</div>
+          
+        </div>
+        <div class="m-row-label">Mark sent</div>
+      </div>
+      <div class="m-row sev-watch  " data-key="035 Odessa TX|ahu1 sales|supply air sensor 2 cooling">
+        <input type="checkbox" class="chk" data-action="dispatch" data-key="035 Odessa TX|ahu1 sales|supply air sensor 2 cooling">
+        <div class="m-row-main">
+          <div class="m-row-top">
+            <span class="m-store">035 Odessa TX</span>
+            <span class="m-device">AHU1 Sales</span>
+            <span class="m-badge new">New</span>
+          </div>
+          <div class="m-reason">Single-symptom cooling alert — watch for the matching alert to confirm before dispatching.</div>
+          <div class="m-meta">Supply Air Sensor 2 Cooling · asserted 07-31-2026 5:12am</div>
+          
+        </div>
+        <div class="m-row-label">Mark sent</div>
+      </div>
+      <div class="m-row sev-watch  " data-key="084 Hobbs NM|rtu2 hardware|loss of communication">
+        <input type="checkbox" class="chk" data-action="dispatch" data-key="084 Hobbs NM|rtu2 hardware|loss of communication">
+        <div class="m-row-main">
+          <div class="m-row-top">
+            <span class="m-store">084 Hobbs NM</span>
+            <span class="m-device">RTU2 Hardware</span>
+            <span class="m-badge new">New</span>
+          </div>
+          <div class="m-reason">Comms down 1 day(s) — watching. Escalates to EnTouch in 6 more day(s) if unresolved.</div>
+          <div class="m-meta">Loss of Communication · asserted 08-12-2026 8:04pm</div>
+          
+        </div>
+        <div class="m-row-label">Mark sent</div>
+      </div>
+      <div class="m-row sev-watch  " data-key="090 Okmulgee OK|rtu5 lumber|supply air sensor 2 cooling">
+        <input type="checkbox" class="chk" data-action="dispatch" data-key="090 Okmulgee OK|rtu5 lumber|supply air sensor 2 cooling">
+        <div class="m-row-main">
+          <div class="m-row-top">
+            <span class="m-store">090 Okmulgee OK</span>
+            <span class="m-device">RTU5 Lumber</span>
+            <span class="m-badge new">New</span>
+          </div>
+          <div class="m-reason">Single-symptom cooling alert — watch for the matching alert to confirm before dispatching.</div>
+          <div class="m-meta">Supply Air Sensor 2 Cooling · asserted 08-13-2026 10:02am</div>
+          
+        </div>
+        <div class="m-row-label">Mark sent</div>
+      </div>
+      <div class="m-row sev-watch  " data-key="097 Eagle Pass TX|rtu3 pipe fittings|supply air sensor 2 cooling">
+        <input type="checkbox" class="chk" data-action="dispatch" data-key="097 Eagle Pass TX|rtu3 pipe fittings|supply air sensor 2 cooling">
+        <div class="m-row-main">
+          <div class="m-row-top">
+            <span class="m-store">097 Eagle Pass TX</span>
+            <span class="m-device">RTU3 Pipe Fittings</span>
+            <span class="m-badge new">New</span>
+          </div>
+          <div class="m-reason">Single-symptom cooling alert — watch for the matching alert to confirm before dispatching.</div>
+          <div class="m-meta">Supply Air Sensor 2 Cooling · asserted 08-12-2026 10:56pm</div>
+          
+        </div>
+        <div class="m-row-label">Mark sent</div>
+      </div>
+      <div class="m-row sev-watch  " data-key="101 Universal City TX|rtu5 doors - cool only|loss of communication">
+        <input type="checkbox" class="chk" data-action="dispatch" data-key="101 Universal City TX|rtu5 doors - cool only|loss of communication">
+        <div class="m-row-main">
+          <div class="m-row-top">
+            <span class="m-store">101 Universal City TX</span>
+            <span class="m-device">RTU5 Doors - Cool Only</span>
+            <span class="m-badge new">New</span>
+          </div>
+          <div class="m-reason">Comms down 5 day(s) — watching. Escalates to EnTouch in 2 more day(s) if unresolved.</div>
+          <div class="m-meta">Loss of Communication · asserted 08-08-2026 5:06pm</div>
+          
+        </div>
+        <div class="m-row-label">Mark sent</div>
+      </div>
+    </div><div class="m-tab-panel " data-panel="doors">
+      <div class="m-section-note">Bay doors left open today — staff behavior, not equipment. No dispatch action here. Anything not dated today has moved to Stale / ghost alerts.</div>
+      
+      <div class="m-row sev-watch  " data-key="011 Austin TX|bay door - bay door sensor|sensor 1 digital input">
+        
+        <div class="m-row-main">
+          <div class="m-row-top">
+            <span class="m-store">011 Austin TX</span>
+            <span class="m-device">Bay Door - Bay Door Sensor</span>
+            <span class="m-badge new">New</span>
+          </div>
+          
+          <div class="m-meta">Sensor 1 Digital Input · asserted 08-13-2026 7:51am</div>
+          
+        </div>
+        
+      </div>
+      <div class="m-row sev-watch  " data-key="043 Huntsville TX|bay door brsm - bay door|sensor 1 digital input">
+        
+        <div class="m-row-main">
+          <div class="m-row-top">
+            <span class="m-store">043 Huntsville TX</span>
+            <span class="m-device">Bay Door BRSM - Bay Door</span>
+            <span class="m-badge new">New</span>
+          </div>
+          
+          <div class="m-meta">Sensor 1 Digital Input · asserted 08-13-2026 9:19am</div>
+          
+        </div>
+        
+      </div>
+      <div class="m-row sev-watch  " data-key="047 Waco TX|bay door - bay door sensor|sensor 1 digital input">
+        
+        <div class="m-row-main">
+          <div class="m-row-top">
+            <span class="m-store">047 Waco TX</span>
+            <span class="m-device">Bay Door - Bay Door Sensor</span>
+            <span class="m-badge new">New</span>
+          </div>
+          
+          <div class="m-meta">Sensor 1 Digital Input · asserted 08-13-2026 6:43am</div>
+          
+        </div>
+        
+      </div>
+      <div class="m-row sev-watch  " data-key="090 Okmulgee OK|bay door - bay door|sensor 1 digital input">
+        
+        <div class="m-row-main">
+          <div class="m-row-top">
+            <span class="m-store">090 Okmulgee OK</span>
+            <span class="m-device">Bay Door - Bay Door</span>
+            <span class="m-badge new">New</span>
+          </div>
+          
+          <div class="m-meta">Sensor 1 Digital Input · asserted 08-13-2026 8:38am</div>
+          
+        </div>
+        
+      </div>
+      <div class="m-row sev-watch  " data-key="096 El Campo TX|bay door - bay door sensor|sensor 1 digital input">
+        
+        <div class="m-row-main">
+          <div class="m-row-top">
+            <span class="m-store">096 El Campo TX</span>
+            <span class="m-device">Bay Door - Bay Door Sensor</span>
+            <span class="m-badge new">New</span>
+          </div>
+          
+          <div class="m-meta">Sensor 1 Digital Input · asserted 08-13-2026 9:00am</div>
+          
+        </div>
+        
+      </div>
+    </div><div class="m-tab-panel " data-panel="ghost">
+      <div class="m-ghost-toolbar">
+        <div class="m-section-note" style="margin:0;">Alerts stuck open well past their assertion time (sensors/comms idle 150+ days, or door alerts not from today) — not live conditions, worth a cleanup pass with your BMS admin.</div>
+        <button class="m-download-btn" id="m-ghost-download">Download CSV</button>
+      </div>
+      
+      <div class="m-row sev-ghost ">
+        <input type="checkbox" class="chk" data-action="ghost" data-key="091 Carlsbad NM|rtu4 moulding - external 1|low sensor temperature">
+        <div class="m-row-main">
+          <div class="m-row-top">
+            <span class="m-store">091 Carlsbad NM</span>
+            <span class="m-device">RTU4 Moulding - External 1</span>
+          </div>
+          <div class="m-reason">Alert is 2784 days old — almost certainly stuck open in EnTouch, not a live condition.</div>
+          <div class="m-meta">Low Sensor Temperature · asserted 12-28-2018 10:33am</div>
+        </div>
+        <div class="m-row-label">Mark reported</div>
+      </div>
+      <div class="m-row sev-ghost ">
+        <input type="checkbox" class="chk" data-action="ghost" data-key="091 Carlsbad NM|rtu4 moulding - external 1|high sensor temperature">
+        <div class="m-row-main">
+          <div class="m-row-top">
+            <span class="m-store">091 Carlsbad NM</span>
+            <span class="m-device">RTU4 Moulding - External 1</span>
+          </div>
+          <div class="m-reason">Alert is 2784 days old — almost certainly stuck open in EnTouch, not a live condition.</div>
+          <div class="m-meta">High Sensor Temperature · asserted 12-28-2018 10:33am</div>
+        </div>
+        <div class="m-row-label">Mark reported</div>
+      </div>
+      <div class="m-row sev-ghost ">
+        <input type="checkbox" class="chk" data-action="ghost" data-key="019 Midland TX|rtu4 sales - zone temp|high sensor temperature">
+        <div class="m-row-main">
+          <div class="m-row-top">
+            <span class="m-store">019 Midland TX</span>
+            <span class="m-device">RTU4 Sales - Zone Temp</span>
+          </div>
+          <div class="m-reason">Alert is 2704 days old — almost certainly stuck open in EnTouch, not a live condition.</div>
+          <div class="m-meta">High Sensor Temperature · asserted 03-19-2019 12:13pm</div>
+        </div>
+        <div class="m-row-label">Mark reported</div>
+      </div>
+      <div class="m-row sev-ghost ">
+        <input type="checkbox" class="chk" data-action="ghost" data-key="019 Midland TX|rtu4 sales - zone temp|low sensor temperature">
+        <div class="m-row-main">
+          <div class="m-row-top">
+            <span class="m-store">019 Midland TX</span>
+            <span class="m-device">RTU4 Sales - Zone Temp</span>
+          </div>
+          <div class="m-reason">Alert is 2704 days old — almost certainly stuck open in EnTouch, not a live condition.</div>
+          <div class="m-meta">Low Sensor Temperature · asserted 03-19-2019 12:13pm</div>
+        </div>
+        <div class="m-row-label">Mark reported</div>
+      </div>
+      <div class="m-row sev-ghost ">
+        <input type="checkbox" class="chk" data-action="ghost" data-key="019 Midland TX|rtu5 roofing - zone temp|low sensor temperature">
+        <div class="m-row-main">
+          <div class="m-row-top">
+            <span class="m-store">019 Midland TX</span>
+            <span class="m-device">RTU5 Roofing - Zone Temp</span>
+          </div>
+          <div class="m-reason">Alert is 2704 days old — almost certainly stuck open in EnTouch, not a live condition.</div>
+          <div class="m-meta">Low Sensor Temperature · asserted 03-19-2019 12:50pm</div>
+        </div>
+        <div class="m-row-label">Mark reported</div>
+      </div>
+      <div class="m-row sev-ghost ">
+        <input type="checkbox" class="chk" data-action="ghost" data-key="089 MIssion TX|lighting1|loss of communication">
+        <div class="m-row-main">
+          <div class="m-row-top">
+            <span class="m-store">089 MIssion TX</span>
+            <span class="m-device">Lighting1</span>
+          </div>
+          <div class="m-reason">Alert is 2014 days old — almost certainly stuck open in EnTouch, not a live condition.</div>
+          <div class="m-meta">Loss of Communication · asserted 02-05-2021 10:51am</div>
+        </div>
+        <div class="m-row-label">Mark reported</div>
+      </div>
+      <div class="m-row sev-ghost ">
+        <input type="checkbox" class="chk" data-action="ghost" data-key="017 Corpus Christi TX|rtu3 electrical - supply air|sensor 2 error">
+        <div class="m-row-main">
+          <div class="m-row-top">
+            <span class="m-store">017 Corpus Christi TX</span>
+            <span class="m-device">RTU3 Electrical - Supply Air</span>
+          </div>
+          <div class="m-reason">Alert is 1942 days old — almost certainly stuck open in EnTouch, not a live condition.</div>
+          <div class="m-meta">Sensor 2 Error · asserted 04-19-2021 10:19am</div>
+        </div>
+        <div class="m-row-label">Mark reported</div>
+      </div>
+      <div class="m-row sev-ghost ">
+        <input type="checkbox" class="chk" data-action="ghost" data-key="109 Aransas Pass TX|ahu7 front office - external 1|sensor 1 error">
+        <div class="m-row-main">
+          <div class="m-row-top">
+            <span class="m-store">109 Aransas Pass TX</span>
+            <span class="m-device">AHU7 Front Office - External 1</span>
+          </div>
+          <div class="m-reason">Alert is 1942 days old — almost certainly stuck open in EnTouch, not a live condition.</div>
+          <div class="m-meta">Sensor 1 Error · asserted 04-19-2021 10:07am</div>
+        </div>
+        <div class="m-row-label">Mark reported</div>
+      </div>
+      <div class="m-row sev-ghost ">
+        <input type="checkbox" class="chk" data-action="ghost" data-key="089 MIssion TX|rtu3 roofing - zone temp|sensor 1 error">
+        <div class="m-row-main">
+          <div class="m-row-top">
+            <span class="m-store">089 MIssion TX</span>
+            <span class="m-device">RTU3 Roofing - Zone Temp</span>
+          </div>
+          <div class="m-reason">Alert is 1939 days old — almost certainly stuck open in EnTouch, not a live condition.</div>
+          <div class="m-meta">Sensor 1 Error · asserted 04-22-2021 12:12pm</div>
+        </div>
+        <div class="m-row-label">Mark reported</div>
+      </div>
+      <div class="m-row sev-ghost ">
+        <input type="checkbox" class="chk" data-action="ghost" data-key="025 NW San Antonio TX|bay door - bay door sensor|sensor 1 digital input">
+        <div class="m-row-main">
+          <div class="m-row-top">
+            <span class="m-store">025 NW San Antonio TX</span>
+            <span class="m-device">Bay Door - Bay Door Sensor</span>
+          </div>
+          <div class="m-reason">Door alert is 1661 day(s) old, not from today's report — stale rather than a door currently open.</div>
+          <div class="m-meta">Sensor 1 Digital Input · asserted 01-24-2022 10:27am</div>
+        </div>
+        <div class="m-row-label">Mark reported</div>
+      </div>
+      <div class="m-row sev-ghost ">
+        <input type="checkbox" class="chk" data-action="ghost" data-key="042 Las Cruces NM|bay door - bay door sensor|sensor 1 digital input">
+        <div class="m-row-main">
+          <div class="m-row-top">
+            <span class="m-store">042 Las Cruces NM</span>
+            <span class="m-device">Bay Door - Bay Door Sensor</span>
+          </div>
+          <div class="m-reason">Door alert is 1353 day(s) old, not from today's report — stale rather than a door currently open.</div>
+          <div class="m-meta">Sensor 1 Digital Input · asserted 11-28-2022 8:53pm</div>
+        </div>
+        <div class="m-row-label">Mark reported</div>
+      </div>
+      <div class="m-row sev-ghost ">
+        <input type="checkbox" class="chk" data-action="ghost" data-key="086 Alpine TX|rtu5 offices - supply air|sensor 2 error">
+        <div class="m-row-main">
+          <div class="m-row-top">
+            <span class="m-store">086 Alpine TX</span>
+            <span class="m-device">RTU5 Offices - Supply air</span>
+          </div>
+          <div class="m-reason">Alert is 381 days old — almost certainly stuck open in EnTouch, not a live condition.</div>
+          <div class="m-meta">Sensor 2 Error · asserted 07-28-2025 7:27am</div>
+        </div>
+        <div class="m-row-label">Mark reported</div>
+      </div>
+      <div class="m-row sev-ghost ">
+        <input type="checkbox" class="chk" data-action="ghost" data-key="035 Odessa TX|ahu2 sales - supply air|sensor 2 error">
+        <div class="m-row-main">
+          <div class="m-row-top">
+            <span class="m-store">035 Odessa TX</span>
+            <span class="m-device">AHU2 Sales - Supply Air</span>
+          </div>
+          <div class="m-reason">Alert is 365 days old — almost certainly stuck open in EnTouch, not a live condition.</div>
+          <div class="m-meta">Sensor 2 Error · asserted 08-13-2025 2:49pm</div>
+        </div>
+        <div class="m-row-label">Mark reported</div>
+      </div>
+      <div class="m-row sev-ghost ">
+        <input type="checkbox" class="chk" data-action="ghost" data-key="050 San Antonio TX|bay door - bay door sensor|sensor 1 digital input">
+        <div class="m-row-main">
+          <div class="m-row-top">
+            <span class="m-store">050 San Antonio TX</span>
+            <span class="m-device">Bay Door - Bay Door Sensor</span>
+          </div>
+          <div class="m-reason">Door alert is 221 day(s) old, not from today's report — stale rather than a door currently open.</div>
+          <div class="m-meta">Sensor 1 Digital Input · asserted 01-03-2026 3:03pm</div>
+        </div>
+        <div class="m-row-label">Mark reported</div>
+      </div>
+      <div class="m-row sev-ghost ">
+        <input type="checkbox" class="chk" data-action="ghost" data-key="006 Bastrop TX|bay door - bay door sensor|sensor 1 digital input">
+        <div class="m-row-main">
+          <div class="m-row-top">
+            <span class="m-store">006 Bastrop TX</span>
+            <span class="m-device">Bay Door - Bay Door Sensor</span>
+          </div>
+          <div class="m-reason">Door alert is 116 day(s) old, not from today's report — stale rather than a door currently open.</div>
+          <div class="m-meta">Sensor 1 Digital Input · asserted 04-19-2026 11:19am</div>
+        </div>
+        <div class="m-row-label">Mark reported</div>
+      </div>
+      <div class="m-row sev-ghost ">
+        <input type="checkbox" class="chk" data-action="ghost" data-key="033 Pharr TX|bay door - bay door sensor|sensor 1 digital input">
+        <div class="m-row-main">
+          <div class="m-row-top">
+            <span class="m-store">033 Pharr TX</span>
+            <span class="m-device">Bay Door - Bay Door Sensor</span>
+          </div>
+          <div class="m-reason">Door alert is 96 day(s) old, not from today's report — stale rather than a door currently open.</div>
+          <div class="m-meta">Sensor 1 Digital Input · asserted 05-09-2026 2:07pm</div>
+        </div>
+        <div class="m-row-label">Mark reported</div>
+      </div>
+      <div class="m-row sev-ghost ">
+        <input type="checkbox" class="chk" data-action="ghost" data-key="017 Corpus Christi TX|overhead door - bay door sensor|sensor 1 digital input">
+        <div class="m-row-main">
+          <div class="m-row-top">
+            <span class="m-store">017 Corpus Christi TX</span>
+            <span class="m-device">Overhead Door - Bay Door Sensor</span>
+          </div>
+          <div class="m-reason">Door alert is 88 day(s) old, not from today's report — stale rather than a door currently open.</div>
+          <div class="m-meta">Sensor 1 Digital Input · asserted 05-17-2026 11:23am</div>
+        </div>
+        <div class="m-row-label">Mark reported</div>
+      </div>
+      <div class="m-row sev-ghost ">
+        <input type="checkbox" class="chk" data-action="ghost" data-key="098 Cleveland TX|bay door - bay door sensor|sensor 1 digital input">
+        <div class="m-row-main">
+          <div class="m-row-top">
+            <span class="m-store">098 Cleveland TX</span>
+            <span class="m-device">Bay Door - Bay Door Sensor</span>
+          </div>
+          <div class="m-reason">Door alert is 43 day(s) old, not from today's report — stale rather than a door currently open.</div>
+          <div class="m-meta">Sensor 1 Digital Input · asserted 07-01-2026 7:22am</div>
+        </div>
+        <div class="m-row-label">Mark reported</div>
+      </div>
+      <div class="m-row sev-ghost ">
+        <input type="checkbox" class="chk" data-action="ghost" data-key="071 Nacogdoches TX|bay door - bay door sensor|sensor 1 digital input">
+        <div class="m-row-main">
+          <div class="m-row-top">
+            <span class="m-store">071 Nacogdoches TX</span>
+            <span class="m-device">Bay Door - Bay Door Sensor</span>
+          </div>
+          <div class="m-reason">Door alert is 19 day(s) old, not from today's report — stale rather than a door currently open.</div>
+          <div class="m-meta">Sensor 1 Digital Input · asserted 07-25-2026 4:31pm</div>
+        </div>
+        <div class="m-row-label">Mark reported</div>
+      </div>
+      <div class="m-row sev-ghost ">
+        <input type="checkbox" class="chk" data-action="ghost" data-key="041 Laredo TX|bay door - bay door sensor|sensor 1 digital input">
+        <div class="m-row-main">
+          <div class="m-row-top">
+            <span class="m-store">041 Laredo TX</span>
+            <span class="m-device">Bay Door - Bay Door Sensor</span>
+          </div>
+          <div class="m-reason">Door alert is 8 day(s) old, not from today's report — stale rather than a door currently open.</div>
+          <div class="m-meta">Sensor 1 Digital Input · asserted 08-05-2026 12:58pm</div>
+        </div>
+        <div class="m-row-label">Mark reported</div>
+      </div>
+      <div class="m-row sev-ghost ">
+        <input type="checkbox" class="chk" data-action="ghost" data-key="052 Cleburne TX|bay door - bay door|sensor 1 digital input">
+        <div class="m-row-main">
+          <div class="m-row-top">
+            <span class="m-store">052 Cleburne TX</span>
+            <span class="m-device">Bay Door - Bay Door</span>
+          </div>
+          <div class="m-reason">Door alert is 5 day(s) old, not from today's report — stale rather than a door currently open.</div>
+          <div class="m-meta">Sensor 1 Digital Input · asserted 08-08-2026 12:42am</div>
+        </div>
+        <div class="m-row-label">Mark reported</div>
+      </div>
+    </div><div class="m-history"><button class="m-pill active" data-jump="2026-08-13">2026-08-13</button></div><div class="m-footer-note">
+      Rules: High Internal Temperature → dispatch HVAC. Zone Not Regulating + Supply Air Sensor both open on one unit → dispatch HVAC.
+      If a store already has an HVAC truck rolling for one unit, other non-comms watch items at that store move into dispatch too — checked on the same visit instead of a separate trip.
+      Loss of Communication sits on watch until it's been open 7+ days, then escalates to a call to EnTouch — comms loss is a panel/controller issue, not a truck roll, so it doesn't get pulled in just because a truck happens to be on-site.
+      Multiple units losing comms at one site within 24 hours of each other is flagged as a shared-panel hint, but still waits for the 7-day threshold before escalating. Alerts idle 150+ days are flagged as stale rather than live.
+      Checkboxes persist across sessions on this device.
+    </div></div>
 </div>
+
+<script type="application/json" id="mccoy-seed-data">{"dates":["2026-08-13"],"snapshots":{"2026-08-13":[{"facility":"003 Brazoria TX","device":"RTU1 Mud/Patching","alertType":"Loss of Communication","description":"Communication lost for more than 2 hours.","dateStr":"07-20-2026 4:52pm"},{"facility":"006 Bastrop TX","device":"Bay Door - Bay Door Sensor","alertType":"Sensor 1 Digital Input","description":"Bay Door Open: Observed for 30 minutes.","dateStr":"04-19-2026 11:19am"},{"facility":"008 Stephenville TX","device":"RTU2 Tools","alertType":"Supply Air Sensor 2 Cooling","description":"Observed value outside range of 40F to 65F for 2 hours.","dateStr":"08-13-2026 9:50am"},{"facility":"011 Austin TX","device":"Bay Door - Bay Door Sensor","alertType":"Sensor 1 Digital Input","description":"Bay Door Open: Observed for 30 minutes.","dateStr":"08-13-2026 7:51am"},{"facility":"015 Harlingen TX","device":"RTU5 Lumber","alertType":"Supply Air Sensor 2 Cooling","description":"Observed value outside range of 40F to 65F for 2 hours.","dateStr":"08-13-2026 10:06am"},{"facility":"016 New Braunfels TX","device":"RTU2 Tools","alertType":"Loss of Communication","description":"Communication lost for more than 2 hours.","dateStr":"08-12-2026 10:14pm"},{"facility":"016 New Braunfels TX","device":"RTU5 Lumber","alertType":"Loss of Communication","description":"Communication lost for more than 2 hours.","dateStr":"08-13-2026 4:32am"},{"facility":"017 Corpus Christi TX","device":"Overhead Door - Bay Door Sensor","alertType":"Sensor 1 Digital Input","description":"Bay Door Open : Observed for 30 minutes.","dateStr":"05-17-2026 11:23am"},{"facility":"017 Corpus Christi TX","device":"RTU3 Electrical - Supply Air","alertType":"Sensor 2 Error","description":"Supply air - Observed sensor error for 5 minutes.","dateStr":"04-19-2021 10:19am"},{"facility":"017 Corpus Christi TX","device":"RTU5 Doors","alertType":"Zone Not Regulating","description":"3 or more degrees above Cool Set Point for 1 hour.","dateStr":"08-13-2026 4:07am"},{"facility":"017 Corpus Christi TX","device":"RTU5 Doors","alertType":"Supply Air Sensor 2 Cooling","description":"Observed value outside range of 40F to 65F for 2 hours.","dateStr":"08-06-2026 2:31pm"},{"facility":"019 Midland TX","device":"RTU4 Sales - Zone Temp","alertType":"High Sensor Temperature","description":"Zone Temp - Observed error for 1 hour.","dateStr":"03-19-2019 12:13pm"},{"facility":"019 Midland TX","device":"RTU4 Sales - Zone Temp","alertType":"Low Sensor Temperature","description":"Zone Temp - Observed error for 1 hour.","dateStr":"03-19-2019 12:13pm"},{"facility":"019 Midland TX","device":"RTU5 Roofing - Zone Temp","alertType":"Low Sensor Temperature","description":"Zone Temp - Observed error for 1 hour.","dateStr":"03-19-2019 12:50pm"},{"facility":"025 NW San Antonio TX","device":"Bay Door - Bay Door Sensor","alertType":"Sensor 1 Digital Input","description":"Observed for 30 minutes.","dateStr":"01-24-2022 10:27am"},{"facility":"028 Baytown TX","device":"RTU3 Light Cloud - Cool Only","alertType":"High Internal Temperature","description":"Observed value at or above 85F for 1 hour.","dateStr":"08-13-2026 9:26am"},{"facility":"028 Baytown TX","device":"RTU3 Light Cloud - Cool Only - Zone Temp","alertType":"High Sensor Temperature","description":"Zone Temp - Observed value at or above 85F for 1 hour.","dateStr":"08-13-2026 9:26am"},{"facility":"029 Corpus Christi TX","device":"RTU4 Moulding- Cool only","alertType":"Supply Air Sensor 2 Cooling","description":"Observed value outside range of 40F to 60F for 2 hours.","dateStr":"08-13-2026 4:12am"},{"facility":"030 San Angelo TX","device":"RTU3 Numbers-Letters","alertType":"Loss of Communication","description":"Communication lost for more than 2 hours.","dateStr":"06-22-2026 3:57pm"},{"facility":"030 San Angelo TX","device":"RTU5 Doors","alertType":"Loss of Communication","description":"Communication lost for more than 2 hours.","dateStr":"08-08-2026 5:34pm"},{"facility":"030 San Angelo TX","device":"RTU5 Doors","alertType":"Supply Air Sensor 2 Cooling","description":"Observed value outside range of 40F to 65F for 2 hours.","dateStr":"08-08-2026 2:05pm"},{"facility":"033 Pharr TX","device":"Bay Door - Bay Door Sensor","alertType":"Sensor 1 Digital Input","description":"Observed for 30 minutes.","dateStr":"05-09-2026 2:07pm"},{"facility":"034 Bryan TX","device":"RTU3 Nails","alertType":"Loss of Communication","description":"Communication lost for more than 2 hours.","dateStr":"08-11-2026 9:27pm"},{"facility":"034 Bryan TX","device":"RTU4 Paint","alertType":"Loss of Communication","description":"Communication lost for more than 2 hours.","dateStr":"08-12-2026 6:15pm"},{"facility":"034 Bryan TX","device":"RTU5 Lumber CO","alertType":"Loss of Communication","description":"Communication lost for more than 2 hours.","dateStr":"08-11-2026 9:28pm"},{"facility":"035 Odessa TX","device":"AHU1 Sales","alertType":"Loss of Communication","description":"Communication lost for more than 2 hours.","dateStr":"07-31-2026 5:47pm"},{"facility":"035 Odessa TX","device":"AHU1 Sales","alertType":"Supply Air Sensor 2 Cooling","description":"Observed value outside range of 40F to 65F for 2 hours.","dateStr":"07-31-2026 5:12am"},{"facility":"035 Odessa TX","device":"AHU2 Sales - Supply Air","alertType":"Sensor 2 Error","description":"Supply air - Observed sensor error for 5 minutes.","dateStr":"08-13-2025 2:49pm"},{"facility":"038 Rosenberg TX","device":"RTU1 Moulding","alertType":"Loss of Communication","description":"Communication lost for more than 2 hours.","dateStr":"06-06-2026 6:30am"},{"facility":"041 Laredo TX","device":"Bay Door - Bay Door Sensor","alertType":"Sensor 1 Digital Input","description":"Bay Door Open: Observed for 30 minutes.","dateStr":"08-05-2026 12:58pm"},{"facility":"042 Las Cruces NM","device":"Bay Door - Bay Door Sensor","alertType":"Sensor 1 Digital Input","description":"Bay Door Open: Observed for 30 minutes.","dateStr":"11-28-2022 8:53pm"},{"facility":"043 Huntsville TX","device":"Bay Door BRSM - Bay Door","alertType":"Sensor 1 Digital Input","description":"Bay Door Open: Observed for 15 minutes.","dateStr":"08-13-2026 9:19am"},{"facility":"044 Kerrville TX","device":"RTU2 Electric","alertType":"Loss of Communication","description":"Communication lost for more than 2 hours.","dateStr":"07-16-2026 5:23am"},{"facility":"047 Waco TX","device":"Bay Door - Bay Door Sensor","alertType":"Sensor 1 Digital Input","description":"Bay Door Open: Observed for 30 minutes.","dateStr":"08-13-2026 6:43am"},{"facility":"047 Waco TX","device":"RTU3 Doors","alertType":"Loss of Communication","description":"Communication lost for more than 2 hours.","dateStr":"07-29-2026 3:15pm"},{"facility":"050 San Antonio TX","device":"Bay Door - Bay Door Sensor","alertType":"Sensor 1 Digital Input","description":"Observed for 30 minutes.","dateStr":"01-03-2026 3:03pm"},{"facility":"052 Cleburne TX","device":"Bay Door - Bay Door","alertType":"Sensor 1 Digital Input","description":"Bay Door Open: Observed for 30 minutes.","dateStr":"08-08-2026 12:42am"},{"facility":"071 Nacogdoches TX","device":"Bay Door - Bay Door Sensor","alertType":"Sensor 1 Digital Input","description":"Bay Door Open : Observed for 30 minutes.","dateStr":"07-25-2026 4:31pm"},{"facility":"072 Paris TX","device":"AHU6 Office","alertType":"Zone Not Regulating","description":"3 or more degrees above Cool Set Point for 1 hour.","dateStr":"07-14-2026 5:49am"},{"facility":"072 Paris TX","device":"AHU6 Office","alertType":"Supply Air Sensor 2 Cooling","description":"Observed value outside range of 40F to 65F for 2 hours.","dateStr":"07-14-2026 3:12am"},{"facility":"072 Paris TX","device":"RTU4 Lumber","alertType":"Loss of Communication","description":"Communication lost for more than 2 hours.","dateStr":"07-10-2026 7:05pm"},{"facility":"074 Bee Cave TX","device":"RTU2 AC/ Electric","alertType":"Zone Not Regulating","description":"3 or more degrees above Cool Set Point for 1 hour.","dateStr":"08-13-2026 9:22am"},{"facility":"074 Bee Cave TX","device":"RTU2 AC/ Electric","alertType":"Supply Air Sensor 2 Cooling","description":"Observed value outside range of 40F to 65F for 2 hours.","dateStr":"08-08-2026 1:50pm"},{"facility":"074 Bee Cave TX","device":"RTU5 Lumber","alertType":"Loss of Communication","description":"Communication lost for more than 2 hours.","dateStr":"07-08-2026 12:21pm"},{"facility":"084 Hobbs NM","device":"RTU2 Hardware","alertType":"Loss of Communication","description":"Communication lost for more than 2 hours.","dateStr":"08-12-2026 8:04pm"},{"facility":"086 Alpine TX","device":"RTU5 Offices - Supply air","alertType":"Sensor 2 Error","description":"Supply air - Observed sensor error for 5 minutes.","dateStr":"07-28-2025 7:27am"},{"facility":"089 MIssion TX","device":"Lighting1","alertType":"Loss of Communication","description":"Communication lost for more than 2 hours.","dateStr":"02-05-2021 10:51am"},{"facility":"089 MIssion TX","device":"RTU3 Roofing - Zone Temp","alertType":"Sensor 1 Error","description":"Zone Temp - Observed sensor error for 5 minutes.","dateStr":"04-22-2021 12:12pm"},{"facility":"090 Okmulgee OK","device":"Bay Door - Bay Door","alertType":"Sensor 1 Digital Input","description":"Bay Door Open: Observed for 30 minutes.","dateStr":"08-13-2026 8:38am"},{"facility":"090 Okmulgee OK","device":"RTU5 Lumber","alertType":"Supply Air Sensor 2 Cooling","description":"Observed value outside range of 40F to 65F for 2 hours.","dateStr":"08-13-2026 10:02am"},{"facility":"091 Carlsbad NM","device":"RTU4 Moulding - External 1","alertType":"Low Sensor Temperature","description":"Zone Temp - Observed error for 1 hour.","dateStr":"12-28-2018 10:33am"},{"facility":"091 Carlsbad NM","device":"RTU4 Moulding - External 1","alertType":"High Sensor Temperature","description":"Zone Temp - Observed error for 1 hour.","dateStr":"12-28-2018 10:33am"},{"facility":"096 El Campo TX","device":"Bay Door - Bay Door Sensor","alertType":"Sensor 1 Digital Input","description":"Bay Door Open: Observed for 30 minutes.","dateStr":"08-13-2026 9:00am"},{"facility":"097 Eagle Pass TX","device":"RTU3 Pipe Fittings","alertType":"Supply Air Sensor 2 Cooling","description":"Observed value outside range of 40F to 65F for 2 hours.","dateStr":"08-12-2026 10:56pm"},{"facility":"098 Cleveland TX","device":"Bay Door - Bay Door Sensor","alertType":"Sensor 1 Digital Input","description":"Bay Door Open: Observed for 15 minutes.","dateStr":"07-01-2026 7:22am"},{"facility":"101 Universal City TX","device":"RTU5 Doors - Cool Only","alertType":"Loss of Communication","description":"Communication lost for more than 2 hours.","dateStr":"08-08-2026 5:06pm"},{"facility":"109 Aransas Pass TX","device":"AHU7 Front Office - External 1","alertType":"Sensor 1 Error","description":"External 1 - Observed sensor error for 5 minutes.","dateStr":"04-19-2021 10:07am"},{"facility":"109 Aransas Pass TX","device":"RTU3 Electrical","alertType":"Supply Air Sensor 2 Cooling","description":"Observed value outside range of 40F to 65F for 2 hours.","dateStr":"08-13-2026 6:07am"},{"facility":"109 Aransas Pass TX","device":"RTU5 Lumber","alertType":"High Internal Temperature","description":"Observed value at or above 85F for 1 hour.","dateStr":"08-13-2026 9:47am"},{"facility":"109 Aransas Pass TX","device":"RTU5 Lumber","alertType":"Supply Air Sensor 2 Cooling","description":"Observed value outside range of 40F to 65F for 2 hours.","dateStr":"08-12-2026 10:44am"},{"facility":"109 Aransas Pass TX","device":"RTU5 Lumber - Zone Temp","alertType":"Low Sensor Temperature","description":"Zone Temp - Observed value at or below 45F for 1 hour.","dateStr":"07-09-2026 2:34pm"},{"facility":"113 Montgomery TX","device":"RTU3 Irrigation","alertType":"Zone Not Regulating","description":"3 or more degrees above Cool Set Point for 1 hour.","dateStr":"08-13-2026 10:05am"},{"facility":"113 Montgomery TX","device":"RTU3 Irrigation","alertType":"Supply Air Sensor 2 Cooling","description":"Observed value outside range of 40F to 65F for 2 hours.","dateStr":"08-11-2026 5:07am"},{"facility":"115 Midlothian TX","device":"RTU1 Tools","alertType":"Loss of Communication","description":"Communication lost for more than 2 hours.","dateStr":"07-29-2026 11:59am"}]},"dispatched":{"109 Aransas Pass TX|rtu3 electrical|supply air sensor 2 cooling":"2026-08-13T18:07:21.680Z"},"reportedGhost":{}}</script>
 
 <script>
 (function(){
@@ -396,33 +1592,77 @@
     return /digital input/i.test(a.alertType) || /bay door/i.test(a.device);
   }
 
+  // Storage adapter: inside Claude.ai this uses the artifact's persistent storage API.
+  // When this file is downloaded and opened elsewhere (GitHub Pages, a local double-click,
+  // an intranet server) window.storage doesn't exist at all, so we fall back to this
+  // browser's own localStorage instead — that's what lets the exported file keep working
+  // once it's outside Claude.ai.
+  const hasClaudeStorage = (typeof window.storage !== 'undefined' && window.storage && typeof window.storage.get === 'function');
+
+  async function storageGet(key){
+    if(hasClaudeStorage){
+      try{ return await window.storage.get(key, false); }catch(e){ return null; }
+    }
+    try{
+      const raw = localStorage.getItem(key);
+      return raw!=null ? {key, value: raw, shared:false} : null;
+    }catch(e){ return null; }
+  }
+
+  async function storageSet(key, value){
+    if(hasClaudeStorage){
+      try{ return await window.storage.set(key, value, false); }catch(e){ return null; }
+    }
+    try{ localStorage.setItem(key, value); return {key, value, shared:false}; }catch(e){ return null; }
+  }
+
+  // On first run outside Claude.ai, seed localStorage from the embedded data block (if any)
+  // so a downloaded/shared copy of this file opens already populated — no re-upload needed.
+  async function seedFromEmbeddedData(){
+    if(hasClaudeStorage) return; // Claude.ai always has its own persisted storage already
+    try{
+      const already = localStorage.getItem(STORAGE_PREFIX+"dates");
+      if(already) return; // don't clobber existing local data with an older embedded snapshot
+      const tag = document.getElementById('mccoy-seed-data');
+      if(!tag || !tag.textContent || !tag.textContent.trim()) return;
+      const seed = JSON.parse(tag.textContent);
+      if(!seed || !seed.dates || !seed.dates.length) return;
+      seed.dates.forEach(d=>{
+        if(seed.snapshots[d]) localStorage.setItem(STORAGE_PREFIX+"snapshot:"+d, JSON.stringify(seed.snapshots[d]));
+      });
+      localStorage.setItem(STORAGE_PREFIX+"dates", JSON.stringify(seed.dates));
+      if(seed.dispatched) localStorage.setItem(STORAGE_PREFIX+"dispatched", JSON.stringify(seed.dispatched));
+      if(seed.reportedGhost) localStorage.setItem(STORAGE_PREFIX+"reported-ghost", JSON.stringify(seed.reportedGhost));
+    }catch(e){ /* no usable embedded data, that's fine */ }
+  }
+
   async function saveSnapshot(dateStr, alerts){
-    await window.storage.set(STORAGE_PREFIX+"snapshot:"+dateStr, JSON.stringify(alerts), false);
+    await storageSet(STORAGE_PREFIX+"snapshot:"+dateStr, JSON.stringify(alerts));
     if(!state.dates.includes(dateStr)){
       state.dates.push(dateStr);
       state.dates.sort();
     }
-    await window.storage.set(STORAGE_PREFIX+"dates", JSON.stringify(state.dates), false);
+    await storageSet(STORAGE_PREFIX+"dates", JSON.stringify(state.dates));
   }
 
   async function loadSnapshot(dateStr){
     try{
-      const r = await window.storage.get(STORAGE_PREFIX+"snapshot:"+dateStr, false);
+      const r = await storageGet(STORAGE_PREFIX+"snapshot:"+dateStr);
       return r ? JSON.parse(r.value) : null;
     }catch(e){ return null; }
   }
 
   async function loadIndexes(){
     try{
-      const r = await window.storage.get(STORAGE_PREFIX+"dates", false);
+      const r = await storageGet(STORAGE_PREFIX+"dates");
       state.dates = r ? JSON.parse(r.value) : [];
     }catch(e){ state.dates = []; }
     try{
-      const r = await window.storage.get(STORAGE_PREFIX+"dispatched", false);
+      const r = await storageGet(STORAGE_PREFIX+"dispatched");
       state.dispatched = r ? JSON.parse(r.value) : {};
     }catch(e){ state.dispatched = {}; }
     try{
-      const r = await window.storage.get(STORAGE_PREFIX+"reported-ghost", false);
+      const r = await storageGet(STORAGE_PREFIX+"reported-ghost");
       state.reportedGhost = r ? JSON.parse(r.value) : {};
     }catch(e){ state.reportedGhost = {}; }
   }
@@ -430,13 +1670,13 @@
   async function toggleDispatched(key){
     if(state.dispatched[key]) delete state.dispatched[key];
     else state.dispatched[key] = new Date().toISOString();
-    try{ await window.storage.set(STORAGE_PREFIX+"dispatched", JSON.stringify(state.dispatched), false); }catch(e){}
+    try{ await storageSet(STORAGE_PREFIX+"dispatched", JSON.stringify(state.dispatched)); }catch(e){}
   }
 
   async function toggleReportedGhost(key){
     if(state.reportedGhost[key]) delete state.reportedGhost[key];
     else state.reportedGhost[key] = new Date().toISOString();
-    try{ await window.storage.set(STORAGE_PREFIX+"reported-ghost", JSON.stringify(state.reportedGhost), false); }catch(e){}
+    try{ await storageSet(STORAGE_PREFIX+"reported-ghost", JSON.stringify(state.reportedGhost)); }catch(e){}
   }
 
   function baseDeviceKey(facility, device){
@@ -588,6 +1828,7 @@
         const addOn = "Bundled with today's dispatch — a tech is already headed to this store for another unit, so this gets checked on the same visit rather than waiting for a separate trip.";
         bundledIntoDispatch.push(Object.assign({}, a, {
           reason: addOn,
+          originalReason: a.reason,
           sev: "dispatch",
           sameSiteDispatch: true
         }));
@@ -617,17 +1858,19 @@
       category = "Confirmed high temperature — space at or above 85°F";
       action = "Inspect cooling operation: check compressor, refrigerant charge, condenser/evaporator coils, and airflow. Confirm unit reaches setpoint before closing out.";
     } else if(/zone not regulating/.test(type) || /supply air sensor/.test(type)){
-      category = a.sameSiteDispatch ? "Cooling symptom flagged while on-site for another unit" : "Unit not cooling to setpoint";
+      category = "Unit not cooling to setpoint";
       action = "Diagnose and repair: check compressor operation, refrigerant charge, economizer/dampers, and supply air sensor calibration. Confirm zone and supply air both return to normal range before closing out.";
-      if(a.sameSiteDispatch) priority = "Medium — check while on-site";
     } else if(/sensor temperature|sensor error/.test(type)){
-      category = "Sensor reading out of range" + (a.sameSiteDispatch ? " — flagged while on-site for another unit" : "");
+      category = "Sensor reading out of range";
       action = "Verify this sensor's reading against actual conditions; recalibrate or replace if faulty.";
-      priority = a.sameSiteDispatch ? "Medium — check while on-site" : "High";
     } else {
-      category = "Open EnTouch alert flagged while on-site for another unit";
-      action = "Take a look at this alert while on-site for the primary issue and resolve or clear if appropriate.";
-      priority = "Medium — check while on-site";
+      category = "Open EnTouch alert";
+      action = "Review this alert and resolve or clear if appropriate.";
+    }
+    if(a.sameSiteDispatch){
+      priority = "Medium — while on-site for the primary dispatch";
+      category = category + " (bundled — not the primary reason for this visit)";
+      action = `ALSO CHECK THIS UNIT while on-site for the main dispatch at this store — it was sitting on the watch list, not yet urgent enough to dispatch on its own. Watch note: "${a.originalReason || 'No specific reason logged.'}" Once there, proceed as follows: ${action}`;
     }
     const riskNote = /paint|ammo|chemical/i.test(a.device) ? "\nNote: department may store paint/chemical/ammo stock — heat exposure is a product-safety concern, not just comfort." : "";
     return `WORK ORDER REQUEST — HVAC SERVICE
@@ -708,6 +1951,7 @@ Source: EnTouch BMS automated alert`;
 
   function render(result, reportDateStr){
     el('m-board').style.display = 'grid';
+    el('m-export-trigger').style.display = 'inline-block';
     el('cnt-dispatch').textContent = result.dispatchHvac.length;
     el('cnt-vendor').textContent = result.dispatchVendor.length;
     el('cnt-watch').textContent = result.watch.length;
@@ -915,13 +2159,68 @@ Source: EnTouch BMS automated alert`;
     await loadAndRender(reportDateStr);
   }
 
+  async function exportStandaloneHtml(){
+    // pull every stored snapshot plus the dispatched/reported-ghost checkbox state
+    // and bake it into a copy of this page, so the downloaded file opens pre-loaded
+    // anywhere — GitHub Pages, a shared drive, a local double-click — no re-upload needed.
+    const snapshots = {};
+    for(const d of state.dates){
+      const alerts = await loadSnapshot(d);
+      if(alerts) snapshots[d] = alerts;
+    }
+    const seed = {
+      dates: state.dates,
+      snapshots,
+      dispatched: state.dispatched,
+      reportedGhost: state.reportedGhost
+    };
+    const seedJson = JSON.stringify(seed).replace(/</g, '\\u003c'); // guard against premature script-close sequences
+
+    const clone = document.documentElement.cloneNode(true);
+    let seedTag = clone.querySelector('#mccoy-seed-data');
+    if(!seedTag){
+      seedTag = document.createElement('script');
+      seedTag.type = 'application/json';
+      seedTag.id = 'mccoy-seed-data';
+      (clone.querySelector('body') || clone).appendChild(seedTag);
+    }
+    seedTag.textContent = seedJson;
+
+    const htmlStr = '<!DOCTYPE html>\n' + clone.outerHTML;
+    const blob = new Blob([htmlStr], {type:'text/html;charset=utf-8;'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    const latestDate = state.dates[state.dates.length-1] || 'export';
+    a.download = `mccoy_alert_dashboard_${latestDate}.html`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
   el('m-upload-trigger').addEventListener('click', ()=>el('m-file-input').click());
   el('m-file-input').addEventListener('change', (e)=>{
     if(e.target.files && e.target.files[0]) handleFile(e.target.files[0]);
     e.target.value = '';
   });
 
+  el('m-export-trigger').addEventListener('click', async ()=>{
+    const btn = el('m-export-trigger');
+    const original = 'Download standalone HTML';
+    btn.textContent = 'Building file...';
+    try{
+      await exportStandaloneHtml();
+      btn.textContent = 'Downloaded';
+      btn.classList.add('copied');
+    }catch(e){
+      btn.textContent = 'Export failed';
+    }
+    setTimeout(()=>{ btn.textContent = original; btn.classList.remove('copied'); }, 2200);
+  });
+
   (async function init(){
+    await seedFromEmbeddedData();
     await loadIndexes();
     if(state.dates.length){
       await loadAndRender(state.dates[state.dates.length-1]);
@@ -929,3 +2228,4 @@ Source: EnTouch BMS automated alert`;
   })();
 })();
 </script>
+</body></html>
