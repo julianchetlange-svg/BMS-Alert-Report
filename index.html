@@ -1,0 +1,931 @@
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo+Narrow:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+
+<style>
+  :root{
+    --base:#1B1E20;
+    --panel:#242829;
+    --panel-2:#2A2F30;
+    --hairline:#3A3F41;
+    --text:#EDEBE6;
+    --text-muted:#8D9296;
+    --red:#D6553B;
+    --red-dim:#5C3A32;
+    --amber:#E3A23C;
+    --amber-dim:#4E3F26;
+    --green:#6FA07C;
+    --green-dim:#334233;
+    --dim:#5A6266;
+    --dim-2:#33373A;
+    --blue:#5C8AA8;
+    --blue-dim:#2E3D44;
+  }
+  *{box-sizing:border-box;}
+  .mccoy-root{
+    background:var(--base);
+    color:var(--text);
+    font-family:'Inter',sans-serif;
+    border-radius:12px;
+    padding:0;
+    max-width:100%;
+    overflow:hidden;
+    border:1px solid var(--hairline);
+  }
+  .mccoy-root h1,.mccoy-root h2,.mccoy-root h3{
+    font-family:'Archivo Narrow',sans-serif;
+    letter-spacing:.02em;
+    margin:0;
+  }
+  .mccoy-mono{font-family:'IBM Plex Mono',monospace;}
+
+  /* header */
+  .m-header{
+    padding:20px 22px 16px;
+    border-bottom:1px solid var(--hairline);
+    display:flex;
+    justify-content:space-between;
+    align-items:flex-start;
+    gap:16px;
+    flex-wrap:wrap;
+  }
+  .m-header .eyebrow{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:11px;
+    letter-spacing:.12em;
+    color:var(--amber);
+    text-transform:uppercase;
+    margin-bottom:4px;
+  }
+  .m-header h1{font-size:22px;font-weight:700;color:var(--text);}
+  .m-header .sub{font-size:12.5px;color:var(--text-muted);margin-top:4px;}
+  .m-upload-btn{
+    background:var(--amber);
+    color:#1B1E20;
+    border:none;
+    font-family:'IBM Plex Mono',monospace;
+    font-weight:600;
+    font-size:12.5px;
+    letter-spacing:.03em;
+    padding:10px 16px;
+    border-radius:7px;
+    cursor:pointer;
+    white-space:nowrap;
+  }
+  .m-upload-btn:hover{filter:brightness(1.08);}
+  .m-upload-btn:focus-visible{outline:2px solid var(--text);outline-offset:2px;}
+  #m-file-input{display:none;}
+
+  /* split-flap board */
+  .m-board{
+    display:grid;
+    grid-template-columns:repeat(5,1fr);
+    border-bottom:1px solid var(--hairline);
+  }
+  .m-flap{
+    padding:16px 12px 14px;
+    border-right:1px solid var(--hairline);
+    position:relative;
+  }
+  .m-flap:last-child{border-right:none;}
+  .m-flap .count{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:30px;
+    font-weight:600;
+    line-height:1;
+    transition:opacity .15s;
+  }
+  .m-flap .label{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:10px;
+    letter-spacing:.08em;
+    text-transform:uppercase;
+    color:var(--text-muted);
+    margin-top:6px;
+  }
+  .m-flap.c-dispatch .count{color:var(--red);}
+  .m-flap.c-vendor .count{color:var(--blue);}
+  .m-flap.c-watch .count{color:var(--amber);}
+  .m-flap.c-new .count{color:var(--text);}
+  .m-flap.c-ghost .count{color:var(--dim);}
+
+  /* body */
+  .m-body{padding:18px 22px 22px;}
+  .m-empty{
+    padding:48px 20px;
+    text-align:center;
+    color:var(--text-muted);
+    font-size:13.5px;
+    line-height:1.6;
+  }
+  .m-empty strong{color:var(--text);}
+
+  .m-section{margin-bottom:22px;}
+  .m-section-head{
+    display:flex;
+    align-items:baseline;
+    gap:10px;
+    margin-bottom:10px;
+    padding-bottom:8px;
+    border-bottom:1px solid var(--hairline);
+  }
+  .m-section-head h2{font-size:14.5px;font-weight:600;}
+  .m-section-head .n{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:11.5px;
+    color:var(--text-muted);
+  }
+  .m-section-note{font-size:12px;color:var(--text-muted);margin:-4px 0 10px;}
+
+  .m-row{
+    display:flex;
+    align-items:flex-start;
+    gap:12px;
+    padding:11px 12px;
+    background:var(--panel);
+    border-radius:8px;
+    border-left:3px solid var(--hairline);
+    margin-bottom:7px;
+  }
+  .m-row.sev-dispatch{border-left-color:var(--red);}
+  .m-row.sev-watch{border-left-color:var(--amber);}
+  .m-row.sev-ghost{border-left-color:var(--dim);}
+  .m-row.dispatched{opacity:.45;}
+  .m-row .chk{
+    margin-top:2px;
+    width:15px;height:15px;
+    accent-color:var(--amber);
+    cursor:pointer;
+    flex-shrink:0;
+  }
+  .m-row-main{flex:1;min-width:0;}
+  .m-row-top{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;}
+  .m-store{font-weight:600;font-size:13.5px;}
+  .m-device{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:12px;
+    color:var(--text-muted);
+  }
+  .m-badge{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:9.5px;
+    letter-spacing:.06em;
+    text-transform:uppercase;
+    padding:2px 6px;
+    border-radius:4px;
+    font-weight:600;
+  }
+  .m-badge.new{background:var(--green-dim);color:var(--green);}
+  .m-badge.day2{background:var(--red-dim);color:var(--red);}
+  .m-badge.vendor{background:var(--blue-dim);color:var(--blue);}
+  .m-badge.site{background:var(--dim-2);color:var(--text-muted);}
+  .m-row.sev-dispatch.vendor-call{border-left-color:var(--blue);}
+  .m-reason{font-size:12.5px;color:var(--text);margin-top:3px;}
+  .m-meta{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:11px;
+    color:var(--text-muted);
+    margin-top:3px;
+  }
+  .m-row-label{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:10.5px;
+    color:var(--text-muted);
+    align-self:center;
+    white-space:nowrap;
+    flex-shrink:0;
+  }
+
+  .m-collapsible-head{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    cursor:pointer;
+    padding:10px 12px;
+    background:var(--panel-2);
+    border-radius:8px;
+    font-size:12.5px;
+    color:var(--text-muted);
+  }
+  .m-collapsible-head:hover{background:#303536;}
+  .m-collapsible-body{padding-top:8px;}
+  .m-caret{font-family:'IBM Plex Mono',monospace;font-size:11px;}
+
+  .m-tabs{
+    display:flex;
+    overflow-x:auto;
+    border-bottom:1px solid var(--hairline);
+    margin:-18px -22px 18px;
+    padding:0 22px;
+  }
+  .m-tab{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:12px;
+    color:var(--text-muted);
+    padding:12px 14px;
+    cursor:pointer;
+    white-space:nowrap;
+    border-bottom:2px solid transparent;
+    background:none;
+    border-top:none;border-left:none;border-right:none;
+    flex-shrink:0;
+  }
+  .m-tab .n{margin-left:6px;opacity:.75;}
+  .m-tab:hover{color:var(--text);}
+  .m-tab.active{color:var(--text);}
+  .m-tab.active[data-tab="dispatch"]{border-bottom-color:var(--red);}
+  .m-tab.active[data-tab="vendor"]{border-bottom-color:var(--blue);}
+  .m-tab.active[data-tab="watch"]{border-bottom-color:var(--amber);}
+  .m-tab.active[data-tab="doors"]{border-bottom-color:var(--text-muted);}
+  .m-tab.active[data-tab="ghost"]{border-bottom-color:var(--dim);}
+  .m-tab-panel{display:none;}
+  .m-tab-panel.active{display:block;}
+
+  .m-ghost-toolbar{
+    display:flex;
+    justify-content:space-between;
+    align-items:flex-start;
+    gap:14px;
+    margin-bottom:10px;
+  }
+  .m-download-btn{
+    background:transparent;
+    color:var(--dim);
+    border:1px solid var(--hairline);
+    font-family:'IBM Plex Mono',monospace;
+    font-size:11.5px;
+    font-weight:500;
+    letter-spacing:.02em;
+    padding:7px 12px;
+    border-radius:6px;
+    cursor:pointer;
+    white-space:nowrap;
+    flex-shrink:0;
+  }
+  .m-download-btn:hover{color:var(--text);border-color:var(--text-muted);}
+  .m-download-btn:focus-visible{outline:2px solid var(--text);outline-offset:2px;}
+
+  .m-wo-btn{
+    margin-top:8px;
+    background:transparent;
+    color:var(--red);
+    border:1px solid var(--red-dim);
+    font-family:'IBM Plex Mono',monospace;
+    font-size:11px;
+    font-weight:500;
+    padding:5px 10px;
+    border-radius:6px;
+    cursor:pointer;
+  }
+  .m-wo-btn:hover{background:var(--red-dim);}
+  .m-wo-btn.copied{color:var(--green);border-color:var(--green-dim);background:var(--green-dim);}
+  .m-wo-btn:focus-visible{outline:2px solid var(--text);outline-offset:2px;}
+
+  .m-history{
+    display:flex;
+    gap:6px;
+    flex-wrap:wrap;
+    margin-top:14px;
+  }
+  .m-pill{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:11px;
+    padding:5px 10px;
+    border-radius:20px;
+    border:1px solid var(--hairline);
+    color:var(--text-muted);
+    cursor:pointer;
+    background:transparent;
+  }
+  .m-pill.active{
+    background:var(--panel-2);
+    color:var(--text);
+    border-color:var(--amber);
+  }
+  .m-pill:hover{border-color:var(--text-muted);}
+
+  .m-footer-note{
+    font-size:11.5px;
+    color:var(--text-muted);
+    margin-top:18px;
+    padding-top:14px;
+    border-top:1px solid var(--hairline);
+    line-height:1.6;
+  }
+
+  @media (max-width:640px){
+    .m-board{grid-template-columns:repeat(2,1fr);}
+    .m-flap:nth-child(2n){border-right:none;}
+    .m-flap:nth-child(n+3){border-top:1px solid var(--hairline);}
+    .m-header{flex-direction:column;}
+    .m-row{flex-wrap:wrap;}
+    .m-tabs{margin:-16px -16px 16px;padding:0 16px;}
+  }
+</style>
+
+<div class="mccoy-root" id="mccoy-app">
+  <div class="m-header">
+    <div>
+      <div class="eyebrow">McCoy's &middot; BMS EnTouch</div>
+      <h1>Alert Dispatch Board</h1>
+      <div class="sub" id="m-header-sub">No report loaded yet</div>
+    </div>
+    <div>
+      <button class="m-upload-btn" id="m-upload-trigger" type="button">Load today's report</button>
+      <input type="file" id="m-file-input" accept=".csv">
+    </div>
+  </div>
+
+  <div class="m-board" id="m-board" style="display:none;">
+    <div class="m-flap c-dispatch"><div class="count" id="cnt-dispatch">0</div><div class="label">HVAC dispatch</div></div>
+    <div class="m-flap c-vendor"><div class="count" id="cnt-vendor">0</div><div class="label">Call EnTouch</div></div>
+    <div class="m-flap c-watch"><div class="count" id="cnt-watch">0</div><div class="label">Watch list</div></div>
+    <div class="m-flap c-new"><div class="count" id="cnt-new">0</div><div class="label">New today</div></div>
+    <div class="m-flap c-ghost"><div class="count" id="cnt-ghost">0</div><div class="label">Stale / ghost</div></div>
+  </div>
+
+  <div class="m-body" id="m-body">
+    <div class="m-empty">
+      <strong>Load a daily EnTouch export to get started.</strong><br>
+      I'll diff it against the last report you loaded, flag anything that needs a truck rolled today,
+      and keep a running history so nothing sits forgotten in the backlog.
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  const STORAGE_PREFIX = "mccoy:";
+  const GHOST_DAYS = 150; // alerts this old are almost certainly stuck/orphaned, not live
+  const BACKLOG_DAYS = 7; // real alerts older than this need a cleanup sweep, not just today's triage
+  const LOC_DISPATCH_DAYS = 7; // Loss of Communication watches until this age, then escalates to EnTouch
+
+  const state = {
+    dates: [],          // sorted list of report date strings (YYYY-MM-DD) we have snapshots for
+    currentDate: null,
+    activeTab: 'dispatch',
+    dispatched: {},      // key -> true
+    reportedGhost: {}     // key -> true
+  };
+
+  const el = id => document.getElementById(id);
+
+  function normSpace(s){ return (s||"").replace(/\s+/g," ").trim(); }
+
+  function parseAlertDate(s){
+    // format: "MM-DD-YYYY H:MMam/pm"
+    const m = /^(\d{2})-(\d{2})-(\d{4})\s+(\d{1,2}):(\d{2})\s*([ap]m)$/i.exec((s||"").trim());
+    if(!m) return null;
+    let [, mo, da, yr, hh, mi, ap] = m;
+    hh = parseInt(hh,10); mi = parseInt(mi,10);
+    if(ap.toLowerCase()==="pm" && hh!==12) hh+=12;
+    if(ap.toLowerCase()==="am" && hh===12) hh=0;
+    return new Date(parseInt(yr,10), parseInt(mo,10)-1, parseInt(da,10), hh, mi);
+  }
+
+  function dateKey(d){
+    return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+  }
+
+  function alertKey(a){
+    return normSpace(a.facility)+"|"+normSpace(a.device).toLowerCase()+"|"+normSpace(a.alertType).toLowerCase();
+  }
+
+  function isDoorAlert(a){
+    return /digital input/i.test(a.alertType) || /bay door/i.test(a.device);
+  }
+
+  async function saveSnapshot(dateStr, alerts){
+    await window.storage.set(STORAGE_PREFIX+"snapshot:"+dateStr, JSON.stringify(alerts), false);
+    if(!state.dates.includes(dateStr)){
+      state.dates.push(dateStr);
+      state.dates.sort();
+    }
+    await window.storage.set(STORAGE_PREFIX+"dates", JSON.stringify(state.dates), false);
+  }
+
+  async function loadSnapshot(dateStr){
+    try{
+      const r = await window.storage.get(STORAGE_PREFIX+"snapshot:"+dateStr, false);
+      return r ? JSON.parse(r.value) : null;
+    }catch(e){ return null; }
+  }
+
+  async function loadIndexes(){
+    try{
+      const r = await window.storage.get(STORAGE_PREFIX+"dates", false);
+      state.dates = r ? JSON.parse(r.value) : [];
+    }catch(e){ state.dates = []; }
+    try{
+      const r = await window.storage.get(STORAGE_PREFIX+"dispatched", false);
+      state.dispatched = r ? JSON.parse(r.value) : {};
+    }catch(e){ state.dispatched = {}; }
+    try{
+      const r = await window.storage.get(STORAGE_PREFIX+"reported-ghost", false);
+      state.reportedGhost = r ? JSON.parse(r.value) : {};
+    }catch(e){ state.reportedGhost = {}; }
+  }
+
+  async function toggleDispatched(key){
+    if(state.dispatched[key]) delete state.dispatched[key];
+    else state.dispatched[key] = new Date().toISOString();
+    try{ await window.storage.set(STORAGE_PREFIX+"dispatched", JSON.stringify(state.dispatched), false); }catch(e){}
+  }
+
+  async function toggleReportedGhost(key){
+    if(state.reportedGhost[key]) delete state.reportedGhost[key];
+    else state.reportedGhost[key] = new Date().toISOString();
+    try{ await window.storage.set(STORAGE_PREFIX+"reported-ghost", JSON.stringify(state.reportedGhost), false); }catch(e){}
+  }
+
+  function baseDeviceKey(facility, device){
+    // EnTouch reports sub-sensors on the same physical unit as separate device strings,
+    // e.g. "RTU5 Lumber" and "RTU5 Lumber - Zone Temp" are one RTU, not two. Strip the
+    // known component suffixes so alerts on the same equipment group together.
+    const base = normSpace(device).replace(/\s*-\s*(zone temp|supply air|external\s*\d*)\s*$/i, "");
+    return normSpace(facility).toLowerCase() + "|" + base.toLowerCase();
+  }
+
+  function parseCsv(text){
+    const parsed = Papa.parse(text, {header:true, skipEmptyLines:true});
+    return parsed.data.map(row => ({
+      facility: normSpace(row["Facility Name"]),
+      device: normSpace(row["Device Name"]),
+      alertType: normSpace(row["Alert Type"]),
+      description: normSpace(row["Alert Description"]),
+      dateStr: normSpace(row["Alert Assertion Date/Time"])
+    })).filter(a => a.facility && a.device);
+  }
+
+  function guessReportDate(alerts){
+    // the most recent calendar date present in the file is almost always "today"
+    let maxDt = null;
+    alerts.forEach(a=>{
+      const d = parseAlertDate(a.dateStr);
+      if(d && (!maxDt || d>maxDt)) maxDt = d;
+    });
+    return maxDt ? dateKey(maxDt) : dateKey(new Date());
+  }
+
+  function classify(alerts, reportDateStr, prevAlerts){
+    const reportDate = new Date(reportDateStr+"T00:00:00");
+    const prevKeys = new Set((prevAlerts||[]).map(alertKey));
+    const currKeys = new Set(alerts.map(alertKey));
+
+    // enrich
+    const enriched = alerts.map(a=>{
+      const dt = parseAlertDate(a.dateStr);
+      const ageDays = dt ? Math.floor((reportDate - new Date(dt.getFullYear(),dt.getMonth(),dt.getDate())) / 86400000) : 0;
+      return Object.assign({}, a, {dt, ageDays, key:alertKey(a), isNew: !prevKeys.has(alertKey(a))});
+    });
+
+    const resolvedKeys = [...prevKeys].filter(k=>!currKeys.has(k));
+    const resolved = (prevAlerts||[]).filter(a=>resolvedKeys.includes(alertKey(a)));
+
+    // group non-door alerts by physical unit (stripping EnTouch sub-sensor suffixes) for combo detection
+    const byDevice = {};
+    enriched.forEach(a=>{
+      if(isDoorAlert(a)) return;
+      const dk = baseDeviceKey(a.facility, a.device);
+      (byDevice[dk] = byDevice[dk]||[]).push(a);
+    });
+
+    // group Loss of Communication alerts by facility, keyed by actual assertion time —
+    // "simultaneous" means their real timestamps are close together, not just both being
+    // new in this diff (on a first-ever load everything looks "new")
+    const locByFacility = {};
+    enriched.forEach(a=>{
+      if(/loss of communication/i.test(a.alertType) && a.dt){
+        (locByFacility[a.facility] = locByFacility[a.facility]||[]).push(a);
+      }
+    });
+    const MULTI_WINDOW_MS = 24 * 60 * 60 * 1000; // within 24 hours of each other
+
+    const doors = [];
+    const dispatch = [];
+    const watch = [];
+    const ghost = [];
+    const backlogSeen = new Set();
+
+    enriched.forEach(a=>{
+      if(isDoorAlert(a)){
+        if(a.ageDays === 0){
+          doors.push(a);
+        } else {
+          ghost.push(Object.assign({}, a, {reason:"Door alert is "+a.ageDays+" day(s) old, not from today's report — stale rather than a door currently open."}));
+        }
+        return;
+      }
+
+      if(a.ageDays >= GHOST_DAYS){
+        ghost.push(Object.assign({}, a, {reason:"Alert is "+a.ageDays+" days old — almost certainly stuck open in EnTouch, not a live condition."}));
+        return;
+      }
+
+      const deviceGroup = byDevice[baseDeviceKey(a.facility, a.device)] || [];
+      const types = deviceGroup.map(x=>x.alertType);
+      const hasCombo = types.some(t=>/zone not regulating/i.test(t)) && types.some(t=>/supply air sensor/i.test(t));
+      const deviceHasHighTemp = types.some(t=>/high internal temperature/i.test(t));
+      const isHighTemp = /high internal temperature/i.test(a.alertType);
+      const isLoc = /loss of communication/i.test(a.alertType);
+      const siblingsLoc = isLoc ? (locByFacility[a.facility]||[]).filter(x=>x.device!==a.device) : [];
+      const multiLocSite = isLoc && a.dt && siblingsLoc.some(sib => Math.abs(sib.dt - a.dt) <= MULTI_WINDOW_MS);
+
+      if(isHighTemp){
+        dispatch.push(Object.assign({}, a, {reason:"Confirmed heat — space measured at or above 85°F for an hour.", sev:"dispatch"}));
+      } else if(hasCombo && /zone not regulating|supply air sensor/i.test(a.alertType)){
+        // only surface once per device pair — prefer the Zone Not Regulating row as the anchor
+        if(/zone not regulating/i.test(a.alertType) || !types.some(t=>/zone not regulating/i.test(t))){
+          dispatch.push(Object.assign({}, a, {reason:"Not cooling — zone temp and supply air are both out of range on this unit.", sev:"dispatch"}));
+        }
+      } else if(isLoc && a.ageDays >= LOC_DISPATCH_DAYS){
+        const multiNote = multiLocSite ? " Multiple units at this site lost comms within 24 hours of each other, which points to a shared panel." : "";
+        dispatch.push(Object.assign({}, a, {reason:"Comms down for "+a.ageDays+" days — dispatch to EnTouch (panel/controller issue, not an HVAC truck roll)."+multiNote, sev:"dispatch", vendor:"entouch"}));
+      } else if(isLoc){
+        const remaining = LOC_DISPATCH_DAYS - a.ageDays;
+        const multiNote = multiLocSite ? " Another unit at this site also lost comms within 24 hours — worth a call to the store now even though it's not past the EnTouch threshold yet." : "";
+        watch.push(Object.assign({}, a, {reason: (a.ageDays===0
+          ? "New comms loss today — watching. Escalates to EnTouch if still open in "+LOC_DISPATCH_DAYS+" days."
+          : "Comms down "+a.ageDays+" day(s) — watching. Escalates to EnTouch in "+remaining+" more day(s) if unresolved.") + multiNote, sev:"watch"}));
+      } else if(deviceHasHighTemp || hasCombo){
+        // this unit already has a High Internal Temperature or Zone Not Regulating + Supply Air
+        // combo covering it on the dispatch list — any other sensor alert on the same equipment
+        // (Low/High Sensor Temp, Sensor Error, etc.) is redundant noise once a truck is already going out
+        return;
+      } else if(/zone not regulating|supply air sensor/i.test(a.alertType)){
+        watch.push(Object.assign({}, a, {reason:"Single-symptom cooling alert — watch for the matching alert to confirm before dispatching.", sev:"watch"}));
+      } else if(a.ageDays > BACKLOG_DAYS){
+        watch.push(Object.assign({}, a, {reason:"Open "+a.ageDays+" days with no dispatch yet — part of the backlog sweep.", sev:"watch"}));
+      } else {
+        watch.push(Object.assign({}, a, {reason:"", sev:"watch"}));
+      }
+    });
+
+    // split dispatch into HVAC truck rolls vs EnTouch vendor calls, dedupe combo rows per device
+    const seenDispatchKeys = new Set();
+    const dispatchDedup = dispatch.filter(a=>{
+      const dk = baseDeviceKey(a.facility, a.device)+"|combo";
+      const isCombo = /zone not regulating|supply air sensor/i.test(a.alertType) && !/high internal|loss of comm/i.test(a.alertType);
+      const gk = isCombo ? dk : a.key;
+      if(seenDispatchKeys.has(gk)) return false;
+      seenDispatchKeys.add(gk);
+      return true;
+    });
+    const dispatchHvac = dispatchDedup.filter(a=>a.vendor!=='entouch');
+    const dispatchVendor = dispatchDedup.filter(a=>a.vendor==='entouch');
+
+    // if a store already has an HVAC truck rolling for another unit, pull its remaining
+    // watch items into the dispatch list too — the tech is already on-site, so there's
+    // no reason to wait for a separate trip. Comms alerts still go through EnTouch,
+    // they don't get pulled in just because a truck happens to be at the same store.
+    const facilitiesWithHvac = new Set(dispatchHvac.map(a=>a.facility));
+    const watchStay = [];
+    const bundledIntoDispatch = [];
+    watch.forEach(a=>{
+      const isLocWatch = /loss of communication/i.test(a.alertType);
+      if(facilitiesWithHvac.has(a.facility) && !isLocWatch){
+        const addOn = "Bundled with today's dispatch — a tech is already headed to this store for another unit, so this gets checked on the same visit rather than waiting for a separate trip.";
+        bundledIntoDispatch.push(Object.assign({}, a, {
+          reason: addOn,
+          sev: "dispatch",
+          sameSiteDispatch: true
+        }));
+      } else {
+        watchStay.push(a);
+      }
+    });
+    const dispatchHvacFinal = dispatchHvac.concat(bundledIntoDispatch);
+
+    return {
+      dispatchHvac: dispatchHvacFinal.sort((a,b)=>a.facility.localeCompare(b.facility)),
+      dispatchVendor: dispatchVendor.sort((a,b)=>a.facility.localeCompare(b.facility)),
+      watch: watchStay.sort((a,b)=>a.facility.localeCompare(b.facility)),
+      ghost: ghost.sort((a,b)=>b.ageDays-a.ageDays),
+      doors,
+      resolved,
+      newCount: enriched.filter(a=>a.isNew && !isDoorAlert(a)).length
+    };
+  }
+
+  function fmtStore(facility){ return facility; }
+
+  function buildWorkOrder(a){
+    const type = (a.alertType||"").toLowerCase();
+    let category, action, priority = "High";
+    if(/high internal temperature/.test(type)){
+      category = "Confirmed high temperature — space at or above 85°F";
+      action = "Inspect cooling operation: check compressor, refrigerant charge, condenser/evaporator coils, and airflow. Confirm unit reaches setpoint before closing out.";
+    } else if(/zone not regulating/.test(type) || /supply air sensor/.test(type)){
+      category = a.sameSiteDispatch ? "Cooling symptom flagged while on-site for another unit" : "Unit not cooling to setpoint";
+      action = "Diagnose and repair: check compressor operation, refrigerant charge, economizer/dampers, and supply air sensor calibration. Confirm zone and supply air both return to normal range before closing out.";
+      if(a.sameSiteDispatch) priority = "Medium — check while on-site";
+    } else if(/sensor temperature|sensor error/.test(type)){
+      category = "Sensor reading out of range" + (a.sameSiteDispatch ? " — flagged while on-site for another unit" : "");
+      action = "Verify this sensor's reading against actual conditions; recalibrate or replace if faulty.";
+      priority = a.sameSiteDispatch ? "Medium — check while on-site" : "High";
+    } else {
+      category = "Open EnTouch alert flagged while on-site for another unit";
+      action = "Take a look at this alert while on-site for the primary issue and resolve or clear if appropriate.";
+      priority = "Medium — check while on-site";
+    }
+    const riskNote = /paint|ammo|chemical/i.test(a.device) ? "\nNote: department may store paint/chemical/ammo stock — heat exposure is a product-safety concern, not just comfort." : "";
+    return `WORK ORDER REQUEST — HVAC SERVICE
+Store: ${a.facility}
+Unit: ${a.device}
+Reported Issue: ${category}
+Alert Detail: ${a.alertType} — ${a.description}
+Reported: ${a.dateStr}
+Priority: ${priority}
+Requested Action: ${action}${riskNote}
+Source: EnTouch BMS automated alert`;
+  }
+
+  async function copyToClipboard(text){
+    try{
+      await navigator.clipboard.writeText(text);
+      return true;
+    }catch(e){
+      try{
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.focus(); ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+        return true;
+      }catch(e2){ return false; }
+    }
+  }
+
+  function rowHtml(a, sevClass, opts){
+    opts = opts||{};
+    const key = a.key;
+    const dispatched = !!state.dispatched[key];
+    const isVendor = a.vendor === 'entouch';
+    const badges = [];
+    if(a.isNew) badges.push('<span class="m-badge new">New</span>');
+    if(isVendor) badges.push('<span class="m-badge vendor">Call EnTouch</span>');
+    if(a.sameSiteDispatch) badges.push('<span class="m-badge site">Same-site tech visit</span>');
+    const onLabel = isVendor ? 'Called EnTouch' : 'Dispatched';
+    const offLabel = isVendor ? 'Mark called' : 'Mark sent';
+    return `
+      <div class="m-row ${sevClass} ${isVendor?'vendor-call':''} ${dispatched?'dispatched':''}" data-key="${key}">
+        ${opts.checkbox!==false ? `<input type="checkbox" class="chk" data-action="dispatch" data-key="${key}" ${dispatched?'checked':''}>` : ''}
+        <div class="m-row-main">
+          <div class="m-row-top">
+            <span class="m-store">${fmtStore(a.facility)}</span>
+            <span class="m-device">${a.device}</span>
+            ${badges.join(' ')}
+          </div>
+          ${a.reason ? `<div class="m-reason">${a.reason}</div>` : ''}
+          <div class="m-meta">${a.alertType} &middot; asserted ${a.dateStr}</div>
+          ${opts.workOrder ? `<button class="m-wo-btn" data-wo-key="${key}">Copy work order</button>` : ''}
+        </div>
+        ${opts.checkbox!==false ? `<div class="m-row-label">${dispatched?onLabel:offLabel}</div>` : ''}
+      </div>`;
+  }
+
+  function ghostRowHtml(a){
+    const key = a.key;
+    const reported = !!state.reportedGhost[key];
+    return `
+      <div class="m-row sev-ghost ${reported?'dispatched':''}">
+        <input type="checkbox" class="chk" data-action="ghost" data-key="${key}" ${reported?'checked':''}>
+        <div class="m-row-main">
+          <div class="m-row-top">
+            <span class="m-store">${fmtStore(a.facility)}</span>
+            <span class="m-device">${a.device}</span>
+          </div>
+          <div class="m-reason">${a.reason}</div>
+          <div class="m-meta">${a.alertType} &middot; asserted ${a.dateStr}</div>
+        </div>
+        <div class="m-row-label">${reported?'Reported':'Mark reported'}</div>
+      </div>`;
+  }
+
+  function render(result, reportDateStr){
+    el('m-board').style.display = 'grid';
+    el('cnt-dispatch').textContent = result.dispatchHvac.length;
+    el('cnt-vendor').textContent = result.dispatchVendor.length;
+    el('cnt-watch').textContent = result.watch.length;
+    el('cnt-new').textContent = result.newCount;
+    el('cnt-ghost').textContent = result.ghost.length;
+
+    const idx = state.dates.indexOf(reportDateStr);
+    const hasPrev = idx > 0;
+    el('m-header-sub').textContent = `Report date: ${reportDateStr}${hasPrev ? '' : ' (no prior report to diff against)'}`;
+
+    const tabs = [
+      {key:'dispatch', label:'Dispatch HVAC tech', count:result.dispatchHvac.length},
+      {key:'vendor', label:'Call EnTouch', count:result.dispatchVendor.length},
+      {key:'watch', label:'Watch list', count:result.watch.length},
+      {key:'doors', label:'Door / occupancy alerts', count:result.doors.length},
+      {key:'ghost', label:'Stale / ghost alerts', count:result.ghost.length}
+    ];
+    const activeTab = tabs.some(t=>t.key===state.activeTab) ? state.activeTab : 'dispatch';
+    state.activeTab = activeTab;
+    state.alertByKey = {};
+    result.dispatchHvac.forEach(a=>state.alertByKey[a.key]=a);
+
+    let html = '';
+
+    html += `<div class="m-tabs">`;
+    html += tabs.map(t=>`<button class="m-tab ${t.key===activeTab?'active':''}" data-tab="${t.key}">${t.label}<span class="n">${t.count}</span></button>`).join('');
+    html += `</div>`;
+
+    html += `<div class="m-tab-panel ${activeTab==='dispatch'?'active':''}" data-panel="dispatch">
+      <div class="m-ghost-toolbar">
+        <div class="m-section-note" style="margin:0;">Confirmed heat or a unit that's genuinely not cooling — mechanical, needs a truck on-site. Includes lower-priority items bundled in from stores that already have a truck headed there.</div>
+        ${result.dispatchHvac.length ? `<button class="m-download-btn" id="m-wo-copy-all">Copy all work orders</button>` : ''}
+      </div>
+      ${result.dispatchHvac.length ? result.dispatchHvac.map(a=>rowHtml(a,'sev-dispatch',{workOrder:true})).join('') : '<div class="m-section-note">Nothing meets the HVAC dispatch bar today.</div>'}
+    </div>`;
+
+    html += `<div class="m-tab-panel ${activeTab==='vendor'?'active':''}" data-panel="vendor">
+      <div class="m-section-note">Comms/panel down ${LOC_DISPATCH_DAYS}+ days, or multiple units dark at one site — vendor/network issue, not a mechanical one.</div>
+      ${result.dispatchVendor.length ? result.dispatchVendor.map(a=>rowHtml(a,'sev-dispatch')).join('') : '<div class="m-section-note">Nothing to call in today.</div>'}
+    </div>`;
+
+    html += `<div class="m-tab-panel ${activeTab==='watch'?'active':''}" data-panel="watch">
+      <div class="m-section-note">Single-symptom cooling alerts and comms losses under ${LOC_DISPATCH_DAYS} days — not dispatch-worthy yet, but check tomorrow's report.</div>
+      ${result.watch.length ? result.watch.map(a=>rowHtml(a,'sev-watch')).join('') : '<div class="m-section-note">Nothing on watch.</div>'}
+    </div>`;
+
+    html += `<div class="m-tab-panel ${activeTab==='doors'?'active':''}" data-panel="doors">
+      <div class="m-section-note">Bay doors left open today — staff behavior, not equipment. No dispatch action here. Anything not dated today has moved to Stale / ghost alerts.</div>
+      ${result.doors.length ? result.doors.map(a=>rowHtml(a,'sev-watch',{checkbox:false})).join('') : '<div class="m-section-note">None today.</div>'}
+    </div>`;
+
+    html += `<div class="m-tab-panel ${activeTab==='ghost'?'active':''}" data-panel="ghost">
+      <div class="m-ghost-toolbar">
+        <div class="m-section-note" style="margin:0;">Alerts stuck open well past their assertion time (sensors/comms idle ${GHOST_DAYS}+ days, or door alerts not from today) — not live conditions, worth a cleanup pass with your BMS admin.</div>
+        ${result.ghost.length ? `<button class="m-download-btn" id="m-ghost-download">Download CSV</button>` : ''}
+      </div>
+      ${result.ghost.length ? result.ghost.map(ghostRowHtml).join('') : '<div class="m-section-note">None flagged today.</div>'}
+    </div>`;
+
+    if(result.resolved.length){
+      html += `<div class="m-section" style="margin-top:22px;">
+        <div class="m-collapsible-head" data-toggle="resolved"><span>Resolved since last report (${result.resolved.length})</span><span class="m-caret">+</span></div>
+        <div class="m-collapsible-body" id="body-resolved" style="display:none;">
+          ${result.resolved.map(a=>`<div class="m-row sev-watch" style="border-left-color:var(--green);">
+            <div class="m-row-main">
+              <div class="m-row-top"><span class="m-store">${fmtStore(a.facility)}</span><span class="m-device">${a.device}</span></div>
+              <div class="m-meta">${a.alertType} &middot; last seen ${a.dateStr}</div>
+            </div>
+          </div>`).join('')}
+        </div>
+      </div>`;
+    }
+
+    if(state.dates.length){
+      html += `<div class="m-history">`;
+      html += state.dates.map(d=>`<button class="m-pill ${d===reportDateStr?'active':''}" data-jump="${d}">${d}</button>`).join('');
+      html += `</div>`;
+    }
+
+    html += `<div class="m-footer-note">
+      Rules: High Internal Temperature → dispatch HVAC. Zone Not Regulating + Supply Air Sensor both open on one unit → dispatch HVAC.
+      If a store already has an HVAC truck rolling for one unit, other non-comms watch items at that store move into dispatch too — checked on the same visit instead of a separate trip.
+      Loss of Communication sits on watch until it's been open ${LOC_DISPATCH_DAYS}+ days, then escalates to a call to EnTouch — comms loss is a panel/controller issue, not a truck roll, so it doesn't get pulled in just because a truck happens to be on-site.
+      Multiple units losing comms at one site within 24 hours of each other is flagged as a shared-panel hint, but still waits for the ${LOC_DISPATCH_DAYS}-day threshold before escalating. Alerts idle ${GHOST_DAYS}+ days are flagged as stale rather than live.
+      Checkboxes persist across sessions on this device.
+    </div>`;
+
+    el('m-body').innerHTML = html;
+
+    el('m-body').querySelectorAll('[data-action]').forEach(cb=>{
+      cb.addEventListener('change', async (e)=>{
+        const key = e.target.getAttribute('data-key');
+        const action = e.target.getAttribute('data-action');
+        if(action==='dispatch') await toggleDispatched(key);
+        else await toggleReportedGhost(key);
+        const row = e.target.closest('.m-row');
+        row.classList.toggle('dispatched', e.target.checked);
+        const isVendor = row.classList.contains('vendor-call');
+        const label = row.querySelector('.m-row-label');
+        if(label){
+          if(action==='dispatch') label.textContent = e.target.checked ? (isVendor?'Called EnTouch':'Dispatched') : (isVendor?'Mark called':'Mark sent');
+          else label.textContent = e.target.checked ? 'Reported' : 'Mark reported';
+        }
+      });
+    });
+
+    el('m-body').querySelectorAll('.m-tab').forEach(tabBtn=>{
+      tabBtn.addEventListener('click', ()=>{
+        const key = tabBtn.getAttribute('data-tab');
+        state.activeTab = key;
+        el('m-body').querySelectorAll('.m-tab').forEach(b=>b.classList.toggle('active', b===tabBtn));
+        el('m-body').querySelectorAll('.m-tab-panel').forEach(p=>p.classList.toggle('active', p.getAttribute('data-panel')===key));
+      });
+    });
+
+    el('m-body').querySelectorAll('[data-toggle]').forEach(head=>{
+      head.addEventListener('click', ()=>{
+        const id = 'body-'+head.getAttribute('data-toggle');
+        const body = el(id);
+        const open = body.style.display !== 'none';
+        body.style.display = open ? 'none' : 'block';
+        head.querySelector('.m-caret').textContent = open ? '+' : '\u2212';
+      });
+    });
+
+    el('m-body').querySelectorAll('[data-jump]').forEach(btn=>{
+      btn.addEventListener('click', ()=>loadAndRender(btn.getAttribute('data-jump')));
+    });
+
+    const downloadBtn = el('m-ghost-download');
+    if(downloadBtn){
+      downloadBtn.addEventListener('click', ()=>downloadGhostCsv(result.ghost, reportDateStr));
+    }
+
+    el('m-body').querySelectorAll('[data-wo-key]').forEach(btn=>{
+      btn.addEventListener('click', async ()=>{
+        const a = state.alertByKey[btn.getAttribute('data-wo-key')];
+        if(!a) return;
+        const ok = await copyToClipboard(buildWorkOrder(a));
+        btn.textContent = ok ? 'Copied' : 'Copy failed';
+        btn.classList.toggle('copied', ok);
+        setTimeout(()=>{ btn.textContent = 'Copy work order'; btn.classList.remove('copied'); }, 1800);
+      });
+    });
+
+    const copyAllBtn = el('m-wo-copy-all');
+    if(copyAllBtn){
+      copyAllBtn.addEventListener('click', async ()=>{
+        const text = result.dispatchHvac.map(buildWorkOrder).join('\n\n' + '-'.repeat(40) + '\n\n');
+        const ok = await copyToClipboard(text);
+        copyAllBtn.textContent = ok ? `Copied ${result.dispatchHvac.length} work order(s)` : 'Copy failed';
+        setTimeout(()=>{ copyAllBtn.textContent = 'Copy all work orders'; }, 2000);
+      });
+    }
+  }
+
+  function csvEscape(v){
+    const s = String(v==null ? '' : v);
+    return '"' + s.replace(/"/g,'""') + '"';
+  }
+
+  function downloadGhostCsv(ghostList, reportDateStr){
+    const headers = ["Facility Name","Device Name","Alert Type","Alert Description","Alert Assertion Date/Time","Days Since Asserted"];
+    const lines = [headers.map(csvEscape).join(",")];
+    ghostList.forEach(a=>{
+      lines.push([a.facility, a.device, a.alertType, a.description, a.dateStr, a.ageDays].map(csvEscape).join(","));
+    });
+    const csv = lines.join("\r\n");
+    const blob = new Blob([csv], {type:"text/csv;charset=utf-8;"});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `mccoy_stale_ghost_alerts_${reportDateStr}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  async function loadAndRender(dateStr){
+    const alerts = await loadSnapshot(dateStr);
+    if(!alerts) return;
+    const idx = state.dates.indexOf(dateStr);
+    const prevDate = idx > 0 ? state.dates[idx-1] : null;
+    const prevAlerts = prevDate ? await loadSnapshot(prevDate) : null;
+    state.currentDate = dateStr;
+    render(classify(alerts, dateStr, prevAlerts), dateStr);
+  }
+
+  async function handleFile(file){
+    const text = await file.text();
+    const alerts = parseCsv(text);
+    if(!alerts.length){
+      el('m-header-sub').textContent = "Couldn't find any alert rows in that file — check it's the EnTouch export.";
+      return;
+    }
+    const guessed = guessReportDate(alerts);
+    let reportDateStr = guessed;
+    const existing = state.dates.includes(reportDateStr);
+    if(existing){
+      const overwrite = confirm(`A report for ${reportDateStr} is already loaded. Replace it with this file?`);
+      if(!overwrite) return;
+    }
+    await saveSnapshot(reportDateStr, alerts);
+    await loadAndRender(reportDateStr);
+  }
+
+  el('m-upload-trigger').addEventListener('click', ()=>el('m-file-input').click());
+  el('m-file-input').addEventListener('change', (e)=>{
+    if(e.target.files && e.target.files[0]) handleFile(e.target.files[0]);
+    e.target.value = '';
+  });
+
+  (async function init(){
+    await loadIndexes();
+    if(state.dates.length){
+      await loadAndRender(state.dates[state.dates.length-1]);
+    }
+  })();
+})();
+</script>
