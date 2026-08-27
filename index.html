@@ -435,19 +435,23 @@
   // seed storage from the data baked into this file, so it opens already populated.
   async function seedFromEmbeddedData(){
     try{
-      const already = await storageGet(STORAGE_PREFIX+"dates");
-      if(already) return; // don't clobber existing data with an older embedded snapshot
       const tag = document.getElementById('mccoy-seed-data');
       if(!tag || !tag.textContent || !tag.textContent.trim()) return;
       const seed = JSON.parse(tag.textContent);
       if(!seed || !seed.dates || !seed.dates.length) return;
+
+      // This file's embedded data is always authoritative for what it should show.
+      // We deliberately do NOT skip this when storage already has data — on GitHub Pages
+      // (or any static host) localStorage is shared across every file on that domain, not
+      // scoped per-file, so an earlier dashboard file's data would otherwise "leak" into
+      // this one and make it look stuck on stale/cached content.
       for(const d of seed.dates){
         if(seed.snapshots[d]) await storageSet(STORAGE_PREFIX+"snapshot:"+d, JSON.stringify(seed.snapshots[d]));
       }
       await storageSet(STORAGE_PREFIX+"dates", JSON.stringify(seed.dates));
-      if(seed.dispatched) await storageSet(STORAGE_PREFIX+"dispatched", JSON.stringify(seed.dispatched));
-      if(seed.reportedGhost) await storageSet(STORAGE_PREFIX+"reported-ghost", JSON.stringify(seed.reportedGhost));
-      if(seed.workOrderNotes) await storageSet(STORAGE_PREFIX+"wo-notes", JSON.stringify(seed.workOrderNotes));
+      await storageSet(STORAGE_PREFIX+"dispatched", JSON.stringify(seed.dispatched || {}));
+      await storageSet(STORAGE_PREFIX+"reported-ghost", JSON.stringify(seed.reportedGhost || {}));
+      await storageSet(STORAGE_PREFIX+"wo-notes", JSON.stringify(seed.workOrderNotes || {}));
     }catch(e){ /* no usable embedded data, that's fine */ }
   }
 
