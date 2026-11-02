@@ -2,9 +2,9 @@
 
 Daily flow, Monday to Saturday:
 
-1. **8:30am**: EnTouch emails the "Active Alerts" CSV to the fleet Gmail inbox.
-2. **Right after it arrives**: the Apps Script below (running in that Gmail account) saves the CSV attachment into the Drive folder "BMS System Alerts".
-3. **9:00am Central**: a scheduled Claude task picks up any new CSV from that folder, runs `build_report.py`, commits `index.html` and `mccoy_state.json` to this repo, and emails facilities_management@mccoys.com that the alerts are ready.
+1. **8:30am**: EnTouch emails the "Active Alerts" CSV to mccoysfleet@gmail.com.
+2. **9:00am Central**: a scheduled Claude task reads that email directly from the mccoysfleet Gmail inbox (connected to Claude), extracts the CSV, runs `build_report.py`, commits `index.html` and `mccoy_state.json` to this repo, and emails facilities_management@mccoys.com from mccoysfleet@gmail.com that the alerts are ready.
+3. **Backup path (optional)**: if the task can't pull the attachment from Gmail, it checks the Drive folder "BMS System Alerts". The Apps Script below keeps a copy of each CSV there.
 
 ## Files in this repo
 
