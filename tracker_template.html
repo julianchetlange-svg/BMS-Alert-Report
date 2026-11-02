@@ -1,0 +1,1031 @@
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo+Narrow:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+
+<style>
+  :root{
+    --brand-green:#0D5540;
+    --brand-yellow:#FFE901;
+    --base:#0A3A2C;
+    --panel:#0F4A38;
+    --panel-2:#145741;
+    --hairline:#23705A;
+    --text:#F6F3E6;
+    --text-muted:#A8C7BA;
+    --red:#FF7E5F;
+    --red-dim:#6E3A2E;
+    --amber:#F5A83A;
+    --amber-dim:#5E4B1E;
+    --green:#A6E8B8;
+    --green-dim:#1F6B4A;
+    --dim:#86AB9B;
+    --dim-2:#1D5E49;
+    --blue:#86BBDD;
+    --blue-dim:#1F4F63;
+  }
+  *{box-sizing:border-box;}
+  .mccoy-root{
+    background:var(--base);
+    color:var(--text);
+    font-family:'Inter',sans-serif;
+    border-radius:12px;
+    padding:0;
+    max-width:100%;
+    overflow:hidden;
+    border:1px solid var(--hairline);
+  }
+  .mccoy-root h1,.mccoy-root h2,.mccoy-root h3{
+    font-family:'Archivo Narrow',sans-serif;
+    letter-spacing:.02em;
+    margin:0;
+  }
+  .mccoy-mono{font-family:'IBM Plex Mono',monospace;}
+
+  /* header */
+  .m-header{
+    padding:14px 22px 14px;
+    background:var(--brand-green);
+    border-bottom:3px solid var(--brand-yellow);
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:16px;
+    flex-wrap:wrap;
+  }
+  .m-brand{display:flex;align-items:center;gap:18px;min-width:0;}
+  .m-logo{display:block;height:58px;width:auto;flex-shrink:0;}
+  .m-header .eyebrow{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:11px;
+    letter-spacing:.12em;
+    color:var(--brand-yellow);
+    text-transform:uppercase;
+    margin-bottom:4px;
+  }
+  .m-header h1{font-size:22px;font-weight:700;color:var(--text);}
+  .m-header .sub{font-size:12.5px;color:#CFE6DB;margin-top:4px;}
+  .m-export-btn{
+    background:transparent;
+    color:#E3F2EA;
+    border:1px solid #5FA58C;
+    font-family:'IBM Plex Mono',monospace;
+    font-weight:500;
+    font-size:12px;
+    letter-spacing:.02em;
+    padding:9px 14px;
+    border-radius:7px;
+    cursor:pointer;
+    white-space:nowrap;
+    margin-left:8px;
+  }
+  .m-export-btn:hover{color:var(--brand-yellow);border-color:var(--brand-yellow);}
+  .m-export-btn:focus-visible{outline:2px solid var(--text);outline-offset:2px;}
+  .m-export-btn.copied{color:var(--green);border-color:var(--green-dim);}
+
+  /* split-flap board */
+  .m-board{
+    display:grid;
+    grid-template-columns:repeat(5,1fr);
+    border-bottom:1px solid var(--hairline);
+  }
+  .m-flap{
+    padding:16px 12px 14px;
+    border-right:1px solid var(--hairline);
+    position:relative;
+  }
+  .m-flap:last-child{border-right:none;}
+  .m-flap .count{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:30px;
+    font-weight:600;
+    line-height:1;
+    transition:opacity .15s;
+  }
+  .m-flap .label{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:10px;
+    letter-spacing:.08em;
+    text-transform:uppercase;
+    color:var(--text-muted);
+    margin-top:6px;
+  }
+  .m-flap.c-dispatch .count{color:var(--red);}
+  .m-flap.c-vendor .count{color:var(--blue);}
+  .m-flap.c-watch .count{color:var(--amber);}
+  .m-flap.c-new .count{color:var(--text);}
+  .m-flap.c-ghost .count{color:var(--dim);}
+
+  /* body */
+  .m-body{padding:18px 22px 22px;}
+  .m-empty{
+    padding:48px 20px;
+    text-align:center;
+    color:var(--text-muted);
+    font-size:13.5px;
+    line-height:1.6;
+  }
+  .m-empty strong{color:var(--text);}
+
+  .m-section{margin-bottom:22px;}
+  .m-section-head{
+    display:flex;
+    align-items:baseline;
+    gap:10px;
+    margin-bottom:10px;
+    padding-bottom:8px;
+    border-bottom:1px solid var(--hairline);
+  }
+  .m-section-head h2{font-size:14.5px;font-weight:600;}
+  .m-section-head .n{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:11.5px;
+    color:var(--text-muted);
+  }
+  .m-section-note{font-size:12px;color:var(--text-muted);margin:-4px 0 10px;}
+
+  .m-row{
+    display:flex;
+    align-items:flex-start;
+    gap:12px;
+    padding:11px 12px;
+    background:var(--panel);
+    border-radius:8px;
+    border-left:3px solid var(--hairline);
+    margin-bottom:7px;
+  }
+  .m-row.sev-dispatch{border-left-color:var(--red);}
+  .m-row.sev-watch{border-left-color:var(--amber);}
+  .m-row.sev-ghost{border-left-color:var(--dim);}
+  .m-row.dispatched{opacity:.45;}
+  .m-row .chk{
+    margin-top:2px;
+    width:15px;height:15px;
+    accent-color:var(--brand-yellow);
+    cursor:pointer;
+    flex-shrink:0;
+  }
+  .m-row-main{flex:1;min-width:0;}
+  .m-row-top{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;}
+  .m-store{font-weight:600;font-size:13.5px;}
+  .m-device{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:12px;
+    color:var(--text-muted);
+  }
+  .m-badge{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:9.5px;
+    letter-spacing:.06em;
+    text-transform:uppercase;
+    padding:2px 6px;
+    border-radius:4px;
+    font-weight:600;
+  }
+  .m-badge.new{background:var(--green-dim);color:var(--green);}
+  .m-badge.day2{background:var(--red-dim);color:var(--red);}
+  .m-badge.vendor{background:var(--blue-dim);color:var(--blue);}
+  .m-badge.site{background:var(--dim-2);color:var(--text-muted);}
+  .m-badge.wo{background:var(--green-dim);color:var(--green);}
+  .m-row.sev-dispatch.vendor-call{border-left-color:var(--blue);}
+  .m-reason{font-size:12.5px;color:var(--text);margin-top:3px;}
+  .m-wo-note{
+    font-size:12.5px;
+    color:var(--green);
+    margin-top:5px;
+    padding:6px 8px;
+    background:var(--green-dim);
+    border-radius:5px;
+  }
+  .m-meta{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:11px;
+    color:var(--text-muted);
+    margin-top:3px;
+  }
+  .m-row-label{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:10.5px;
+    color:var(--text-muted);
+    align-self:center;
+    white-space:nowrap;
+    flex-shrink:0;
+  }
+
+  .m-collapsible-head{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    cursor:pointer;
+    padding:10px 12px;
+    background:var(--panel-2);
+    border-radius:8px;
+    font-size:12.5px;
+    color:var(--text-muted);
+  }
+  .m-collapsible-head:hover{background:#1A6650;}
+  .m-collapsible-body{padding-top:8px;}
+  .m-caret{font-family:'IBM Plex Mono',monospace;font-size:11px;}
+
+  .m-tabs{
+    display:flex;
+    overflow-x:auto;
+    border-bottom:1px solid var(--hairline);
+    margin:-18px -22px 18px;
+    padding:0 22px;
+  }
+  .m-tab{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:12px;
+    color:var(--text-muted);
+    padding:12px 14px;
+    cursor:pointer;
+    white-space:nowrap;
+    border-bottom:2px solid transparent;
+    background:none;
+    border-top:none;border-left:none;border-right:none;
+    flex-shrink:0;
+  }
+  .m-tab .n{margin-left:6px;opacity:.75;}
+  .m-tab:hover{color:var(--text);}
+  .m-tab.active{color:var(--brand-yellow);}
+  .m-tab.active[data-tab="dispatch"]{border-bottom-color:var(--red);}
+  .m-tab.active[data-tab="vendor"]{border-bottom-color:var(--blue);}
+  .m-tab.active[data-tab="watch"]{border-bottom-color:var(--amber);}
+  .m-tab.active[data-tab="doors"]{border-bottom-color:var(--text-muted);}
+  .m-tab.active[data-tab="ghost"]{border-bottom-color:var(--dim);}
+  .m-tab-panel{display:none;}
+  .m-tab-panel.active{display:block;}
+
+  .m-ghost-toolbar{
+    display:flex;
+    justify-content:space-between;
+    align-items:flex-start;
+    gap:14px;
+    margin-bottom:10px;
+  }
+  .m-download-btn{
+    background:transparent;
+    color:var(--dim);
+    border:1px solid var(--hairline);
+    font-family:'IBM Plex Mono',monospace;
+    font-size:11.5px;
+    font-weight:500;
+    letter-spacing:.02em;
+    padding:7px 12px;
+    border-radius:6px;
+    cursor:pointer;
+    white-space:nowrap;
+    flex-shrink:0;
+  }
+  .m-download-btn:hover{color:var(--text);border-color:var(--text-muted);}
+  .m-download-btn:focus-visible{outline:2px solid var(--text);outline-offset:2px;}
+
+  .m-wo-btn{
+    margin-top:8px;
+    background:transparent;
+    color:var(--red);
+    border:1px solid var(--red-dim);
+    font-family:'IBM Plex Mono',monospace;
+    font-size:11px;
+    font-weight:500;
+    padding:5px 10px;
+    border-radius:6px;
+    cursor:pointer;
+  }
+  .m-wo-btn:hover{background:var(--red-dim);}
+  .m-wo-btn.copied{color:var(--green);border-color:var(--green-dim);background:var(--green-dim);}
+  .m-wo-btn:focus-visible{outline:2px solid var(--text);outline-offset:2px;}
+
+  .m-history{
+    display:flex;
+    gap:6px;
+    flex-wrap:wrap;
+    margin-top:14px;
+  }
+  .m-pill{
+    font-family:'IBM Plex Mono',monospace;
+    font-size:11px;
+    padding:5px 10px;
+    border-radius:20px;
+    border:1px solid var(--hairline);
+    color:var(--text-muted);
+    cursor:pointer;
+    background:transparent;
+  }
+  .m-pill.active{
+    background:var(--panel-2);
+    color:var(--brand-yellow);
+    border-color:var(--brand-yellow);
+  }
+  .m-pill:hover{border-color:var(--text-muted);}
+
+  .m-footer-note{
+    font-size:11.5px;
+    color:var(--text-muted);
+    margin-top:18px;
+    padding-top:14px;
+    border-top:1px solid var(--hairline);
+    line-height:1.6;
+  }
+
+  @media (max-width:640px){
+    .m-board{grid-template-columns:repeat(2,1fr);}
+    .m-flap:nth-child(2n){border-right:none;}
+    .m-flap:nth-child(n+3){border-top:1px solid var(--hairline);}
+    .m-header{flex-direction:column;}
+    .m-row{flex-wrap:wrap;}
+    .m-tabs{margin:-16px -16px 16px;padding:0 16px;}
+  }
+</style>
+
+<div class="mccoy-root" id="mccoy-app">
+  <div class="m-header">
+    <div class="m-brand">
+      <img class="m-logo" alt="McCoy's Building Supply" src="data:image/png;base64,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">
+      <div>
+        <div class="eyebrow">BMS EnTouch</div>
+        <h1>Alert Dispatch Board</h1>
+        <div class="sub" id="m-header-sub">No report loaded yet</div>
+      </div>
+    </div>
+    <div>
+      <button class="m-export-btn" id="m-export-trigger" type="button" style="display:none;">Save updated copy</button>
+    </div>
+  </div>
+
+  <div class="m-board" id="m-board" style="display:none;">
+    <div class="m-flap c-dispatch"><div class="count" id="cnt-dispatch">0</div><div class="label">HVAC dispatch</div></div>
+    <div class="m-flap c-vendor"><div class="count" id="cnt-vendor">0</div><div class="label">Call EnTouch</div></div>
+    <div class="m-flap c-watch"><div class="count" id="cnt-watch">0</div><div class="label">Watch list</div></div>
+    <div class="m-flap c-new"><div class="count" id="cnt-new">0</div><div class="label">New today</div></div>
+    <div class="m-flap c-ghost"><div class="count" id="cnt-ghost">0</div><div class="label">Stale / ghost</div></div>
+  </div>
+
+  <div class="m-body" id="m-body">
+    <div class="m-empty">
+      <strong>No data embedded in this file.</strong><br>
+      This file is generated by uploading your daily EnTouch export to Claude, which bakes the
+      dispatch board directly into a new copy of this HTML file — no upload step needed here.
+    </div>
+  </div>
+</div>
+
+<script type="application/json" id="mccoy-seed-data"></script>
+
+<script>
+(function(){
+  const STORAGE_PREFIX = "mccoy:";
+  const GHOST_DAYS = 150; // alerts this old are almost certainly stuck/orphaned, not live
+  const BACKLOG_DAYS = 7; // real alerts older than this need a cleanup sweep, not just today's triage
+  const LOC_DISPATCH_DAYS = 7; // Loss of Communication watches until this age, then escalates to EnTouch
+
+  const state = {
+    dates: [],          // sorted list of report date strings (YYYY-MM-DD) we have snapshots for
+    currentDate: null,
+    activeTab: 'dispatch',
+    dispatched: {},      // key -> true
+    reportedGhost: {},    // key -> true
+    workOrderNotes: {}    // key -> free-text note (WO #, vendor, status, findings)
+  };
+
+  const el = id => document.getElementById(id);
+
+  function normSpace(s){ return (s||"").replace(/\s+/g," ").trim(); }
+
+  function parseAlertDate(s){
+    // format: "MM-DD-YYYY H:MMam/pm"
+    const m = /^(\d{2})-(\d{2})-(\d{4})\s+(\d{1,2}):(\d{2})\s*([ap]m)$/i.exec((s||"").trim());
+    if(!m) return null;
+    let [, mo, da, yr, hh, mi, ap] = m;
+    hh = parseInt(hh,10); mi = parseInt(mi,10);
+    if(ap.toLowerCase()==="pm" && hh!==12) hh+=12;
+    if(ap.toLowerCase()==="am" && hh===12) hh=0;
+    return new Date(parseInt(yr,10), parseInt(mo,10)-1, parseInt(da,10), hh, mi);
+  }
+
+  function dateKey(d){
+    return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+  }
+
+  function alertKey(a){
+    return normSpace(a.facility)+"|"+normSpace(a.device).toLowerCase()+"|"+normSpace(a.alertType).toLowerCase();
+  }
+
+  function isDoorAlert(a){
+    return /digital input/i.test(a.alertType) || /bay door/i.test(a.device);
+  }
+
+  // Storage adapter: inside Claude.ai this uses the artifact's persistent storage API.
+  // When this file is downloaded and opened elsewhere (GitHub Pages, a local double-click,
+  // an intranet server) window.storage doesn't exist at all, so we fall back to this
+  // browser's own localStorage instead — that's what lets the exported file keep working
+  // once it's outside Claude.ai.
+  const hasClaudeStorage = (typeof window.storage !== 'undefined' && window.storage && typeof window.storage.get === 'function');
+
+  // In-memory copy of everything we store. Some viewers (preview panes, sandboxed iframes,
+  // locked-down browsers) block localStorage entirely; without this the embedded history
+  // could never be read back and the board would look empty. Memory is always written and
+  // read first, localStorage is a best-effort extra for persisting checkmarks.
+  const memStore = {};
+
+  async function storageGet(key){
+    if(Object.prototype.hasOwnProperty.call(memStore, key)){
+      return {key, value: memStore[key], shared:false};
+    }
+    if(hasClaudeStorage){
+      try{ return await window.storage.get(key, false); }catch(e){ return null; }
+    }
+    try{
+      const raw = localStorage.getItem(key);
+      return raw!=null ? {key, value: raw, shared:false} : null;
+    }catch(e){ return null; }
+  }
+
+  async function storageSet(key, value){
+    memStore[key] = value;
+    if(hasClaudeStorage){
+      try{ return await window.storage.set(key, value, false); }catch(e){ return {key, value, shared:false}; }
+    }
+    try{ localStorage.setItem(key, value); }catch(e){ /* storage blocked: memory copy is enough for this session */ }
+    return {key, value, shared:false};
+  }
+
+  // On first run — whether that's a fresh Claude.ai preview or a copy opened outside it —
+  // seed storage from the data baked into this file, so it opens already populated.
+  async function seedFromEmbeddedData(){
+    try{
+      const tag = document.getElementById('mccoy-seed-data');
+      if(!tag || !tag.textContent || !tag.textContent.trim()) return;
+      const seed = JSON.parse(tag.textContent);
+      if(!seed || !seed.dates || !seed.dates.length) return;
+
+      // This file's embedded data is always authoritative for what it should show.
+      // We deliberately do NOT skip this when storage already has data — on GitHub Pages
+      // (or any static host) localStorage is shared across every file on that domain, not
+      // scoped per-file, so an earlier dashboard file's data would otherwise "leak" into
+      // this one and make it look stuck on stale/cached content.
+      for(const d of seed.dates){
+        if(seed.snapshots[d]) await storageSet(STORAGE_PREFIX+"snapshot:"+d, JSON.stringify(seed.snapshots[d]));
+      }
+      await storageSet(STORAGE_PREFIX+"dates", JSON.stringify(seed.dates));
+      await storageSet(STORAGE_PREFIX+"dispatched", JSON.stringify(seed.dispatched || {}));
+      await storageSet(STORAGE_PREFIX+"reported-ghost", JSON.stringify(seed.reportedGhost || {}));
+      await storageSet(STORAGE_PREFIX+"wo-notes", JSON.stringify(seed.workOrderNotes || {}));
+    }catch(e){ /* no usable embedded data, that's fine */ }
+  }
+
+  async function saveSnapshot(dateStr, alerts){
+    await storageSet(STORAGE_PREFIX+"snapshot:"+dateStr, JSON.stringify(alerts));
+    if(!state.dates.includes(dateStr)){
+      state.dates.push(dateStr);
+      state.dates.sort();
+    }
+    await storageSet(STORAGE_PREFIX+"dates", JSON.stringify(state.dates));
+  }
+
+  async function loadSnapshot(dateStr){
+    try{
+      const r = await storageGet(STORAGE_PREFIX+"snapshot:"+dateStr);
+      return r ? JSON.parse(r.value) : null;
+    }catch(e){ return null; }
+  }
+
+  async function loadIndexes(){
+    try{
+      const r = await storageGet(STORAGE_PREFIX+"dates");
+      state.dates = r ? JSON.parse(r.value) : [];
+    }catch(e){ state.dates = []; }
+    try{
+      const r = await storageGet(STORAGE_PREFIX+"dispatched");
+      state.dispatched = r ? JSON.parse(r.value) : {};
+    }catch(e){ state.dispatched = {}; }
+    try{
+      const r = await storageGet(STORAGE_PREFIX+"reported-ghost");
+      state.reportedGhost = r ? JSON.parse(r.value) : {};
+    }catch(e){ state.reportedGhost = {}; }
+    try{
+      const r = await storageGet(STORAGE_PREFIX+"wo-notes");
+      state.workOrderNotes = r ? JSON.parse(r.value) : {};
+    }catch(e){ state.workOrderNotes = {}; }
+  }
+
+  async function toggleDispatched(key){
+    if(state.dispatched[key]) delete state.dispatched[key];
+    else state.dispatched[key] = new Date().toISOString();
+    try{ await storageSet(STORAGE_PREFIX+"dispatched", JSON.stringify(state.dispatched)); }catch(e){}
+  }
+
+  async function toggleReportedGhost(key){
+    if(state.reportedGhost[key]) delete state.reportedGhost[key];
+    else state.reportedGhost[key] = new Date().toISOString();
+    try{ await storageSet(STORAGE_PREFIX+"reported-ghost", JSON.stringify(state.reportedGhost)); }catch(e){}
+  }
+
+  function baseDeviceKey(facility, device){
+    // EnTouch reports sub-sensors on the same physical unit as separate device strings,
+    // e.g. "RTU5 Lumber" and "RTU5 Lumber - Zone Temp" are one RTU, not two. Strip the
+    // known component suffixes so alerts on the same equipment group together.
+    const base = normSpace(device).replace(/\s*-\s*(zone temp|supply air|external\s*\d*)\s*$/i, "");
+    return normSpace(facility).toLowerCase() + "|" + base.toLowerCase();
+  }
+
+  function classify(alerts, reportDateStr, prevAlerts){
+    const reportDate = new Date(reportDateStr+"T00:00:00");
+    const prevKeys = new Set((prevAlerts||[]).map(alertKey));
+    const currKeys = new Set(alerts.map(alertKey));
+
+    // enrich
+    const enriched = alerts.map(a=>{
+      const dt = parseAlertDate(a.dateStr);
+      const ageDays = dt ? Math.floor((reportDate - new Date(dt.getFullYear(),dt.getMonth(),dt.getDate())) / 86400000) : 0;
+      return Object.assign({}, a, {dt, ageDays, key:alertKey(a), isNew: !prevKeys.has(alertKey(a))});
+    });
+
+    const resolvedKeys = [...prevKeys].filter(k=>!currKeys.has(k));
+    const resolved = (prevAlerts||[]).filter(a=>resolvedKeys.includes(alertKey(a)));
+
+    // group non-door alerts by physical unit (stripping EnTouch sub-sensor suffixes) for combo detection
+    const byDevice = {};
+    enriched.forEach(a=>{
+      if(isDoorAlert(a)) return;
+      const dk = baseDeviceKey(a.facility, a.device);
+      (byDevice[dk] = byDevice[dk]||[]).push(a);
+    });
+
+    // group Loss of Communication alerts by facility, keyed by actual assertion time —
+    // "simultaneous" means their real timestamps are close together, not just both being
+    // new in this diff (on a first-ever load everything looks "new")
+    const locByFacility = {};
+    enriched.forEach(a=>{
+      if(/loss of communication/i.test(a.alertType) && a.dt){
+        (locByFacility[a.facility] = locByFacility[a.facility]||[]).push(a);
+      }
+    });
+    const MULTI_WINDOW_MS = 24 * 60 * 60 * 1000; // within 24 hours of each other
+
+    const doors = [];
+    const dispatch = [];
+    const watch = [];
+    const ghost = [];
+    const backlogSeen = new Set();
+
+    enriched.forEach(a=>{
+      if(isDoorAlert(a)){
+        if(a.ageDays === 0){
+          doors.push(a);
+        } else {
+          ghost.push(Object.assign({}, a, {reason:"Door alert is "+a.ageDays+" day(s) old, not from today's report — stale rather than a door currently open."}));
+        }
+        return;
+      }
+
+      if(a.ageDays >= GHOST_DAYS){
+        ghost.push(Object.assign({}, a, {reason:"Alert is "+a.ageDays+" days old — almost certainly stuck open in EnTouch, not a live condition."}));
+        return;
+      }
+
+      const deviceGroup = byDevice[baseDeviceKey(a.facility, a.device)] || [];
+      const types = deviceGroup.map(x=>x.alertType);
+      const hasCombo = types.some(t=>/zone not regulating/i.test(t)) && types.some(t=>/supply air sensor/i.test(t));
+      const deviceHasHighTemp = types.some(t=>/high internal temperature/i.test(t));
+      const isHighTemp = /high internal temperature/i.test(a.alertType);
+      const isLoc = /loss of communication/i.test(a.alertType);
+      const siblingsLoc = isLoc ? (locByFacility[a.facility]||[]).filter(x=>x.device!==a.device) : [];
+      const multiLocSite = isLoc && a.dt && siblingsLoc.some(sib => Math.abs(sib.dt - a.dt) <= MULTI_WINDOW_MS);
+
+      if(isHighTemp){
+        dispatch.push(Object.assign({}, a, {reason:"Confirmed heat — space measured at or above 85°F for an hour.", sev:"dispatch"}));
+      } else if(hasCombo && /zone not regulating|supply air sensor/i.test(a.alertType)){
+        // only surface once per device pair — prefer the Zone Not Regulating row as the anchor
+        if(/zone not regulating/i.test(a.alertType) || !types.some(t=>/zone not regulating/i.test(t))){
+          dispatch.push(Object.assign({}, a, {reason:"Not cooling — zone temp and supply air are both out of range on this unit.", sev:"dispatch"}));
+        }
+      } else if(isLoc && a.ageDays >= LOC_DISPATCH_DAYS){
+        const multiNote = multiLocSite ? " Multiple units at this site lost comms within 24 hours of each other, which points to a shared panel." : "";
+        dispatch.push(Object.assign({}, a, {reason:"Comms down for "+a.ageDays+" days — dispatch to EnTouch (panel/controller issue, not an HVAC truck roll)."+multiNote, sev:"dispatch", vendor:"entouch"}));
+      } else if(isLoc){
+        const remaining = LOC_DISPATCH_DAYS - a.ageDays;
+        const multiNote = multiLocSite ? " Another unit at this site also lost comms within 24 hours — worth a call to the store now even though it's not past the EnTouch threshold yet." : "";
+        watch.push(Object.assign({}, a, {reason: (a.ageDays===0
+          ? "New comms loss today — watching. Escalates to EnTouch if still open in "+LOC_DISPATCH_DAYS+" days."
+          : "Comms down "+a.ageDays+" day(s) — watching. Escalates to EnTouch in "+remaining+" more day(s) if unresolved.") + multiNote, sev:"watch"}));
+      } else if(deviceHasHighTemp || hasCombo){
+        // this unit already has a High Internal Temperature or Zone Not Regulating + Supply Air
+        // combo covering it on the dispatch list — any other sensor alert on the same equipment
+        // (Low/High Sensor Temp, Sensor Error, etc.) is redundant noise once a truck is already going out
+        return;
+      } else if(/zone not regulating|supply air sensor/i.test(a.alertType)){
+        watch.push(Object.assign({}, a, {reason:"Single-symptom cooling alert — watch for the matching alert to confirm before dispatching.", sev:"watch"}));
+      } else if(a.ageDays > BACKLOG_DAYS){
+        watch.push(Object.assign({}, a, {reason:"Open "+a.ageDays+" days with no dispatch yet — part of the backlog sweep.", sev:"watch"}));
+      } else {
+        watch.push(Object.assign({}, a, {reason:"", sev:"watch"}));
+      }
+    });
+
+    // split dispatch into HVAC truck rolls vs EnTouch vendor calls, dedupe combo rows per device
+    const seenDispatchKeys = new Set();
+    const dispatchDedup = dispatch.filter(a=>{
+      const dk = baseDeviceKey(a.facility, a.device)+"|combo";
+      const isCombo = /zone not regulating|supply air sensor/i.test(a.alertType) && !/high internal|loss of comm/i.test(a.alertType);
+      const gk = isCombo ? dk : a.key;
+      if(seenDispatchKeys.has(gk)) return false;
+      seenDispatchKeys.add(gk);
+      return true;
+    });
+    const dispatchHvac = dispatchDedup.filter(a=>a.vendor!=='entouch');
+    const dispatchVendor = dispatchDedup.filter(a=>a.vendor==='entouch');
+
+    // if a store already has an HVAC truck rolling for another unit, pull its remaining
+    // watch items into the dispatch list too — the tech is already on-site, so there's
+    // no reason to wait for a separate trip. Comms alerts still go through EnTouch,
+    // they don't get pulled in just because a truck happens to be at the same store.
+    const facilitiesWithHvac = new Set(dispatchHvac.map(a=>a.facility));
+    const watchStay = [];
+    const bundledIntoDispatch = [];
+    watch.forEach(a=>{
+      const isLocWatch = /loss of communication/i.test(a.alertType);
+      if(facilitiesWithHvac.has(a.facility) && !isLocWatch){
+        const addOn = "Bundled with today's dispatch — a tech is already headed to this store for another unit, so this gets checked on the same visit rather than waiting for a separate trip.";
+        bundledIntoDispatch.push(Object.assign({}, a, {
+          reason: addOn,
+          originalReason: a.reason,
+          sev: "dispatch",
+          sameSiteDispatch: true
+        }));
+      } else {
+        watchStay.push(a);
+      }
+    });
+    const dispatchHvacFinal = dispatchHvac.concat(bundledIntoDispatch);
+
+    return {
+      dispatchHvac: dispatchHvacFinal.sort((a,b)=>a.facility.localeCompare(b.facility)),
+      dispatchVendor: dispatchVendor.sort((a,b)=>a.facility.localeCompare(b.facility)),
+      watch: watchStay.sort((a,b)=>a.facility.localeCompare(b.facility)),
+      ghost: ghost.sort((a,b)=>b.ageDays-a.ageDays),
+      doors,
+      resolved,
+      newCount: enriched.filter(a=>a.isNew && !isDoorAlert(a)).length
+    };
+  }
+
+  function fmtStore(facility){ return facility; }
+
+  function buildWorkOrder(a){
+    const type = (a.alertType||"").toLowerCase();
+    let category, action, priority = "High";
+    if(/high internal temperature/.test(type)){
+      category = "Confirmed high temperature — space at or above 85°F";
+      action = "Inspect cooling operation: check compressor, refrigerant charge, condenser/evaporator coils, and airflow. Confirm unit reaches setpoint before closing out.";
+    } else if(/zone not regulating/.test(type) || /supply air sensor/.test(type)){
+      category = "Unit not cooling to setpoint";
+      action = "Diagnose and repair: check compressor operation, refrigerant charge, economizer/dampers, and supply air sensor calibration. Confirm zone and supply air both return to normal range before closing out.";
+    } else if(/sensor temperature|sensor error/.test(type)){
+      category = "Sensor reading out of range";
+      action = "Verify this sensor's reading against actual conditions; recalibrate or replace if faulty.";
+    } else {
+      category = "Open EnTouch alert";
+      action = "Review this alert and resolve or clear if appropriate.";
+    }
+    if(a.sameSiteDispatch){
+      priority = "Medium — while on-site for the primary dispatch";
+      category = category + " (bundled — not the primary reason for this visit)";
+      action = `ALSO CHECK THIS UNIT while on-site for the main dispatch at this store — it was sitting on the watch list, not yet urgent enough to dispatch on its own. Watch note: "${a.originalReason || 'No specific reason logged.'}" Once there, proceed as follows: ${action}`;
+    }
+    const riskNote = /paint|ammo|chemical/i.test(a.device) ? "\nNote: department may store paint/chemical/ammo stock — heat exposure is a product-safety concern, not just comfort." : "";
+    return `WORK ORDER REQUEST — HVAC SERVICE
+Store: ${a.facility}
+Unit: ${a.device}
+Reported Issue: ${category}
+Alert Detail: ${a.alertType} — ${a.description}
+Reported: ${a.dateStr}
+Priority: ${priority}
+Requested Action: ${action}${riskNote}
+Source: EnTouch BMS automated alert`;
+  }
+
+  async function copyToClipboard(text){
+    try{
+      await navigator.clipboard.writeText(text);
+      return true;
+    }catch(e){
+      try{
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.focus(); ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+        return true;
+      }catch(e2){ return false; }
+    }
+  }
+
+  function rowHtml(a, sevClass, opts){
+    opts = opts||{};
+    const key = a.key;
+    const dispatched = !!state.dispatched[key];
+    const isVendor = a.vendor === 'entouch';
+    const woNote = state.workOrderNotes[key];
+    const badges = [];
+    if(a.isNew) badges.push('<span class="m-badge new">New</span>');
+    if(isVendor) badges.push('<span class="m-badge vendor">Call EnTouch</span>');
+    if(a.sameSiteDispatch) badges.push('<span class="m-badge site">Same-site tech visit</span>');
+    if(woNote) badges.push('<span class="m-badge wo">WO logged</span>');
+    const onLabel = isVendor ? 'Called EnTouch' : 'Dispatched';
+    const offLabel = isVendor ? 'Mark called' : 'Mark sent';
+    return `
+      <div class="m-row ${sevClass} ${isVendor?'vendor-call':''} ${dispatched?'dispatched':''}" data-key="${key}">
+        ${opts.checkbox!==false ? `<input type="checkbox" class="chk" data-action="dispatch" data-key="${key}" ${dispatched?'checked':''}>` : ''}
+        <div class="m-row-main">
+          <div class="m-row-top">
+            <span class="m-store">${fmtStore(a.facility)}</span>
+            <span class="m-device">${a.device}</span>
+            ${badges.join(' ')}
+          </div>
+          ${a.reason ? `<div class="m-reason">${a.reason}</div>` : ''}
+          <div class="m-meta">${a.alertType} &middot; asserted ${a.dateStr}</div>
+          ${woNote ? `<div class="m-wo-note">${woNote}</div>` : ''}
+          ${opts.workOrder ? `<button class="m-wo-btn" data-wo-key="${key}">Copy work order</button>` : ''}
+        </div>
+        ${opts.checkbox!==false ? `<div class="m-row-label">${dispatched?onLabel:offLabel}</div>` : ''}
+      </div>`;
+  }
+
+  function ghostRowHtml(a){
+    const key = a.key;
+    const reported = !!state.reportedGhost[key];
+    return `
+      <div class="m-row sev-ghost ${reported?'dispatched':''}">
+        <input type="checkbox" class="chk" data-action="ghost" data-key="${key}" ${reported?'checked':''}>
+        <div class="m-row-main">
+          <div class="m-row-top">
+            <span class="m-store">${fmtStore(a.facility)}</span>
+            <span class="m-device">${a.device}</span>
+          </div>
+          <div class="m-reason">${a.reason}</div>
+          <div class="m-meta">${a.alertType} &middot; asserted ${a.dateStr}</div>
+        </div>
+        <div class="m-row-label">${reported?'Reported':'Mark reported'}</div>
+      </div>`;
+  }
+
+  function render(result, reportDateStr){
+    el('m-board').style.display = 'grid';
+    el('m-export-trigger').style.display = 'inline-block';
+    el('cnt-dispatch').textContent = result.dispatchHvac.length;
+    el('cnt-vendor').textContent = result.dispatchVendor.length;
+    el('cnt-watch').textContent = result.watch.length;
+    el('cnt-new').textContent = result.newCount;
+    el('cnt-ghost').textContent = result.ghost.length;
+
+    const idx = state.dates.indexOf(reportDateStr);
+    const hasPrev = idx > 0;
+    el('m-header-sub').textContent = `Report date: ${reportDateStr}${hasPrev ? '' : ' (no prior report to diff against)'}`;
+
+    const tabs = [
+      {key:'dispatch', label:'Dispatch HVAC tech', count:result.dispatchHvac.length},
+      {key:'vendor', label:'Call EnTouch', count:result.dispatchVendor.length},
+      {key:'watch', label:'Watch list', count:result.watch.length},
+      {key:'doors', label:'Door / occupancy alerts', count:result.doors.length},
+      {key:'ghost', label:'Stale / ghost alerts', count:result.ghost.length}
+    ];
+    const activeTab = tabs.some(t=>t.key===state.activeTab) ? state.activeTab : 'dispatch';
+    state.activeTab = activeTab;
+    state.alertByKey = {};
+    result.dispatchHvac.forEach(a=>state.alertByKey[a.key]=a);
+
+    let html = '';
+
+    html += `<div class="m-tabs">`;
+    html += tabs.map(t=>`<button class="m-tab ${t.key===activeTab?'active':''}" data-tab="${t.key}">${t.label}<span class="n">${t.count}</span></button>`).join('');
+    html += `</div>`;
+
+    html += `<div class="m-tab-panel ${activeTab==='dispatch'?'active':''}" data-panel="dispatch">
+      <div class="m-ghost-toolbar">
+        <div class="m-section-note" style="margin:0;">Confirmed heat or a unit that's genuinely not cooling — mechanical, needs a truck on-site. Includes lower-priority items bundled in from stores that already have a truck headed there.</div>
+        ${result.dispatchHvac.length ? `<button class="m-download-btn" id="m-wo-copy-all">Copy all work orders</button>` : ''}
+      </div>
+      ${result.dispatchHvac.length ? result.dispatchHvac.map(a=>rowHtml(a,'sev-dispatch',{workOrder:true})).join('') : '<div class="m-section-note">Nothing meets the HVAC dispatch bar today.</div>'}
+    </div>`;
+
+    html += `<div class="m-tab-panel ${activeTab==='vendor'?'active':''}" data-panel="vendor">
+      <div class="m-section-note">Comms/panel down ${LOC_DISPATCH_DAYS}+ days, or multiple units dark at one site — vendor/network issue, not a mechanical one.</div>
+      ${result.dispatchVendor.length ? result.dispatchVendor.map(a=>rowHtml(a,'sev-dispatch')).join('') : '<div class="m-section-note">Nothing to call in today.</div>'}
+    </div>`;
+
+    html += `<div class="m-tab-panel ${activeTab==='watch'?'active':''}" data-panel="watch">
+      <div class="m-section-note">Single-symptom cooling alerts and comms losses under ${LOC_DISPATCH_DAYS} days — not dispatch-worthy yet, but check tomorrow's report.</div>
+      ${result.watch.length ? result.watch.map(a=>rowHtml(a,'sev-watch')).join('') : '<div class="m-section-note">Nothing on watch.</div>'}
+    </div>`;
+
+    html += `<div class="m-tab-panel ${activeTab==='doors'?'active':''}" data-panel="doors">
+      <div class="m-section-note">Bay doors left open today — staff behavior, not equipment. No dispatch action here. Anything not dated today has moved to Stale / ghost alerts.</div>
+      ${result.doors.length ? result.doors.map(a=>rowHtml(a,'sev-watch',{checkbox:false})).join('') : '<div class="m-section-note">None today.</div>'}
+    </div>`;
+
+    html += `<div class="m-tab-panel ${activeTab==='ghost'?'active':''}" data-panel="ghost">
+      <div class="m-ghost-toolbar">
+        <div class="m-section-note" style="margin:0;">Alerts stuck open well past their assertion time (sensors/comms idle ${GHOST_DAYS}+ days, or door alerts not from today) — not live conditions, worth a cleanup pass with your BMS admin.</div>
+        ${result.ghost.length ? `<button class="m-download-btn" id="m-ghost-download">Download CSV</button>` : ''}
+      </div>
+      ${result.ghost.length ? result.ghost.map(ghostRowHtml).join('') : '<div class="m-section-note">None flagged today.</div>'}
+    </div>`;
+
+    if(result.resolved.length){
+      html += `<div class="m-section" style="margin-top:22px;">
+        <div class="m-collapsible-head" data-toggle="resolved"><span>Resolved since last report (${result.resolved.length})</span><span class="m-caret">+</span></div>
+        <div class="m-collapsible-body" id="body-resolved" style="display:none;">
+          ${result.resolved.map(a=>`<div class="m-row sev-watch" style="border-left-color:var(--green);">
+            <div class="m-row-main">
+              <div class="m-row-top"><span class="m-store">${fmtStore(a.facility)}</span><span class="m-device">${a.device}</span></div>
+              <div class="m-meta">${a.alertType} &middot; last seen ${a.dateStr}</div>
+            </div>
+          </div>`).join('')}
+        </div>
+      </div>`;
+    }
+
+    if(state.dates.length){
+      html += `<div class="m-history">`;
+      html += state.dates.map(d=>`<button class="m-pill ${d===reportDateStr?'active':''}" data-jump="${d}">${d}</button>`).join('');
+      html += `</div>`;
+    }
+
+    html += `<div class="m-footer-note">
+      Rules: High Internal Temperature → dispatch HVAC. Zone Not Regulating + Supply Air Sensor both open on one unit → dispatch HVAC.
+      If a store already has an HVAC truck rolling for one unit, other non-comms watch items at that store move into dispatch too — checked on the same visit instead of a separate trip.
+      Loss of Communication sits on watch until it's been open ${LOC_DISPATCH_DAYS}+ days, then escalates to a call to EnTouch — comms loss is a panel/controller issue, not a truck roll, so it doesn't get pulled in just because a truck happens to be on-site.
+      Multiple units losing comms at one site within 24 hours of each other is flagged as a shared-panel hint, but still waits for the ${LOC_DISPATCH_DAYS}-day threshold before escalating. Alerts idle ${GHOST_DAYS}+ days are flagged as stale rather than live.
+      Checkboxes persist across sessions on this device.
+    </div>`;
+
+    el('m-body').innerHTML = html;
+
+    el('m-body').querySelectorAll('[data-action]').forEach(cb=>{
+      cb.addEventListener('change', async (e)=>{
+        const key = e.target.getAttribute('data-key');
+        const action = e.target.getAttribute('data-action');
+        if(action==='dispatch') await toggleDispatched(key);
+        else await toggleReportedGhost(key);
+        const row = e.target.closest('.m-row');
+        row.classList.toggle('dispatched', e.target.checked);
+        const isVendor = row.classList.contains('vendor-call');
+        const label = row.querySelector('.m-row-label');
+        if(label){
+          if(action==='dispatch') label.textContent = e.target.checked ? (isVendor?'Called EnTouch':'Dispatched') : (isVendor?'Mark called':'Mark sent');
+          else label.textContent = e.target.checked ? 'Reported' : 'Mark reported';
+        }
+      });
+    });
+
+    el('m-body').querySelectorAll('.m-tab').forEach(tabBtn=>{
+      tabBtn.addEventListener('click', ()=>{
+        const key = tabBtn.getAttribute('data-tab');
+        state.activeTab = key;
+        el('m-body').querySelectorAll('.m-tab').forEach(b=>b.classList.toggle('active', b===tabBtn));
+        el('m-body').querySelectorAll('.m-tab-panel').forEach(p=>p.classList.toggle('active', p.getAttribute('data-panel')===key));
+      });
+    });
+
+    el('m-body').querySelectorAll('[data-toggle]').forEach(head=>{
+      head.addEventListener('click', ()=>{
+        const id = 'body-'+head.getAttribute('data-toggle');
+        const body = el(id);
+        const open = body.style.display !== 'none';
+        body.style.display = open ? 'none' : 'block';
+        head.querySelector('.m-caret').textContent = open ? '+' : '\u2212';
+      });
+    });
+
+    el('m-body').querySelectorAll('[data-jump]').forEach(btn=>{
+      btn.addEventListener('click', ()=>loadAndRender(btn.getAttribute('data-jump')));
+    });
+
+    const downloadBtn = el('m-ghost-download');
+    if(downloadBtn){
+      downloadBtn.addEventListener('click', ()=>downloadGhostCsv(result.ghost, reportDateStr));
+    }
+
+    el('m-body').querySelectorAll('[data-wo-key]').forEach(btn=>{
+      btn.addEventListener('click', async ()=>{
+        const a = state.alertByKey[btn.getAttribute('data-wo-key')];
+        if(!a) return;
+        const ok = await copyToClipboard(buildWorkOrder(a));
+        btn.textContent = ok ? 'Copied' : 'Copy failed';
+        btn.classList.toggle('copied', ok);
+        setTimeout(()=>{ btn.textContent = 'Copy work order'; btn.classList.remove('copied'); }, 1800);
+      });
+    });
+
+    const copyAllBtn = el('m-wo-copy-all');
+    if(copyAllBtn){
+      copyAllBtn.addEventListener('click', async ()=>{
+        const text = result.dispatchHvac.map(buildWorkOrder).join('\n\n' + '-'.repeat(40) + '\n\n');
+        const ok = await copyToClipboard(text);
+        copyAllBtn.textContent = ok ? `Copied ${result.dispatchHvac.length} work order(s)` : 'Copy failed';
+        setTimeout(()=>{ copyAllBtn.textContent = 'Copy all work orders'; }, 2000);
+      });
+    }
+  }
+
+  function csvEscape(v){
+    const s = String(v==null ? '' : v);
+    return '"' + s.replace(/"/g,'""') + '"';
+  }
+
+  function downloadGhostCsv(ghostList, reportDateStr){
+    const headers = ["Facility Name","Device Name","Alert Type","Alert Description","Alert Assertion Date/Time","Days Since Asserted"];
+    const lines = [headers.map(csvEscape).join(",")];
+    ghostList.forEach(a=>{
+      lines.push([a.facility, a.device, a.alertType, a.description, a.dateStr, a.ageDays].map(csvEscape).join(","));
+    });
+    const csv = lines.join("\r\n");
+    const blob = new Blob([csv], {type:"text/csv;charset=utf-8;"});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `mccoy_stale_ghost_alerts_${reportDateStr}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  async function loadAndRender(dateStr){
+    const alerts = await loadSnapshot(dateStr);
+    if(!alerts) return;
+    const idx = state.dates.indexOf(dateStr);
+    const prevDate = idx > 0 ? state.dates[idx-1] : null;
+    const prevAlerts = prevDate ? await loadSnapshot(prevDate) : null;
+    state.currentDate = dateStr;
+    render(classify(alerts, dateStr, prevAlerts), dateStr);
+  }
+
+  async function exportStandaloneHtml(){
+    // pull every stored snapshot plus the dispatched/reported-ghost checkbox state
+    // and bake it into a copy of this page, so the downloaded file opens pre-loaded
+    // anywhere — GitHub Pages, a shared drive, a local double-click — no re-upload needed.
+    const snapshots = {};
+    for(const d of state.dates){
+      const alerts = await loadSnapshot(d);
+      if(alerts) snapshots[d] = alerts;
+    }
+    const seed = {
+      dates: state.dates,
+      snapshots,
+      dispatched: state.dispatched,
+      reportedGhost: state.reportedGhost,
+      workOrderNotes: state.workOrderNotes
+    };
+    const seedJson = JSON.stringify(seed).replace(/</g, '\\u003c'); // guard against premature script-close sequences
+
+    const clone = document.documentElement.cloneNode(true);
+    let seedTag = clone.querySelector('#mccoy-seed-data');
+    if(!seedTag){
+      seedTag = document.createElement('script');
+      seedTag.type = 'application/json';
+      seedTag.id = 'mccoy-seed-data';
+      (clone.querySelector('body') || clone).appendChild(seedTag);
+    }
+    seedTag.textContent = seedJson;
+
+    const htmlStr = '<!DOCTYPE html>\n' + clone.outerHTML;
+    const blob = new Blob([htmlStr], {type:'text/html;charset=utf-8;'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    const latestDate = state.dates[state.dates.length-1] || 'export';
+    a.download = `mccoy_alert_dashboard_${latestDate}.html`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  el('m-export-trigger').addEventListener('click', async ()=>{
+    const btn = el('m-export-trigger');
+    const original = 'Save updated copy';
+    btn.textContent = 'Building file...';
+    try{
+      await exportStandaloneHtml();
+      btn.textContent = 'Downloaded';
+      btn.classList.add('copied');
+    }catch(e){
+      btn.textContent = 'Export failed';
+    }
+    setTimeout(()=>{ btn.textContent = original; btn.classList.remove('copied'); }, 2200);
+  });
+
+  (async function init(){
+    await seedFromEmbeddedData();
+    await loadIndexes();
+    if(state.dates.length){
+      await loadAndRender(state.dates[state.dates.length-1]);
+    }
+  })();
+})();
+</script>
